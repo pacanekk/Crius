@@ -1,0 +1,78 @@
+CRIUS PROJECT LICENSE
+
+Copyright © 2026 Błażej Pacelt. All rights reserved.
+
+
+1. OWNERSHIP
+
+Crius is an original software project created and maintained by Błażej Pacelt.
+
+The original Crius source code, documentation, branding, and other original materials remain the property of the author. Forking, copying, or modifying the project does not transfer ownership or authorship of the original work.
+
+
+2. PERMITTED USE
+
+You may:
+
+  a. view and study the source code;
+  b. fork the repository;
+  c. modify the source code;
+  d. use, modify, and distribute forks for personal, educational, research, and other non-commercial purposes.
+
+Any fork or derivative work containing Crius code must retain this license and clearly credit Błażej Pacelt as the original author.
+
+
+3. RESTRICTIONS
+
+Without explicit written permission from Błażej Pacelt, you may not:
+
+  a. use Crius or its original code for commercial purposes;
+  b. sell Crius or any derivative work containing Crius code;
+  c. sublicense, relicense, or place the original Crius code under another license;
+  d. remove or modify copyright, attribution, or license notices;
+  e. claim authorship of the original Crius project;
+  f. present a fork or derivative work as the official Crius project;
+  g. distribute Crius or a derivative work without clearly identifying its origin.
+
+Modifications and forks must remain clearly identifiable as derivatives of the Crius project.
+
+
+4. OFFICIAL REPOSITORY
+
+The only official Crius repository is the repository maintained under the pacanekk GitHub account.
+
+Forks, mirrors, copies, and derivative repositories are not official Crius repositories unless explicitly authorized by Błażej Pacelt.
+
+The existence of a fork or derivative work does not grant its author ownership, authorship, or control over the original Crius project.
+
+
+5. THIRD-PARTY COMPONENTS
+
+Crius may use, depend upon, or integrate with software and other components created by third parties.
+
+Such components are not covered by this license and remain subject to their respective licenses.
+
+For example, Crius uses the Limine bootloader. Limine is not owned or relicensed by the Crius project and remains governed by its own license.
+
+This license applies only to original material created for Crius by Błażej Pacelt.
+
+
+6. CONTRIBUTIONS
+
+Contributions to the official Crius repository do not transfer ownership or control of the Crius project.
+
+Unless otherwise agreed in writing, contributions included in the official project are distributed under the terms of this license.
+
+
+7. DISCLAIMER
+
+Crius is provided "AS IS", without warranty of any kind, express or implied.
+
+The author is not responsible for any damages or consequences resulting from the use, modification, or distribution of the software, to the maximum extent permitted by applicable law.
+
+
+8. COMMERCIAL LICENSING
+
+If you would like to use Crius for commercial purposes or discuss an arrangement outside the terms of this license, please contact Błażej Pacelt via the pacanekk GitHub account.
+
+The author is open to discussion and will consider commercial or other licensing arrangements on a case-by-case basis.
