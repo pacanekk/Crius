@@ -150,6 +150,7 @@ struct blk_io {
 #define EEXIST       17
 #define ENOTDIR      18
 #define EISDIR       19
+#define ENODEV       20
 #define EINVAL       22
 #define ENFILE       23
 #define EMFILE       24
