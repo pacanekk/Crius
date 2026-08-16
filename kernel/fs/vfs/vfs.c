@@ -353,11 +353,10 @@ int vfs_append(const char *path, const char *data, size_t len) {
     for (int i = 0; i < n; i++) {
         struct vfs_mount *m = matches[i];
         const char *rel = strip_mount(abs, m);
-        int type;
-        size_t size;
-        if (m->ops->stat && m->ops->stat(m->fs_private, rel, &type, &size) == 0) {
+        struct stat st;
+        if (m->ops->stat && m->ops->stat(m->fs_private, rel, &st) == 0) {
             if (m->ops->write_at)
-                return m->ops->write_at(m->fs_private, rel, size, data, len);
+                return m->ops->write_at(m->fs_private, rel, (uint64_t)st.st_size, data, len);
         }
     }
     /* File not found - create on first mount */
@@ -434,15 +433,20 @@ int vfs_delete(const char *path) {
     return -ENOENT;
 }
 
-int vfs_stat(const char *path, int *type, size_t *size) {
+int vfs_stat(const char *path, struct stat *st) {
     char abs[256];
     resolve_abs(path, abs, sizeof(abs));
     struct vfs_mount *matches[4];
     int n = find_mounts(abs, matches, 4);
     for (int i = 0; i < n; i++) {
-        if (matches[i]->ops->stat &&
-            matches[i]->ops->stat(matches[i]->fs_private, strip_mount(abs, matches[i]), type, size) == 0)
-            return 0;
+        if (matches[i]->ops->stat) {
+            memset(st, 0, sizeof(*st));
+            int r = matches[i]->ops->stat(matches[i]->fs_private, strip_mount(abs, matches[i]), st);
+            if (r == 0) {
+                st->st_dev = (uint32_t)(matches[i] - mounts);
+                return 0;
+            }
+        }
     }
     return -ENOENT;
 }
@@ -489,8 +493,7 @@ int vfs_list(const char *path, vfs_list_cb cb) {
                 seen[seen_off++] = '\0';
             }
 
-            size_t sz = 0;
-            int type;
+            struct stat st;
             char child_path[512];
             int rlen = 0;
             while (rel[rlen]) rlen++;
@@ -507,8 +510,8 @@ int vfs_list(const char *path, vfs_list_cb cb) {
                 while (de.name[jj] && i < 510) { child_path[i++] = de.name[jj++]; }
                 child_path[i] = '\0';
             }
-            if (m->ops->stat) m->ops->stat(m->fs_private, child_path, &type, &sz);
-            cb(de.name, de.type, sz);
+            if (m->ops->stat) m->ops->stat(m->fs_private, child_path, &st);
+            cb(de.name, de.type, (size_t)st.st_size);
             count++;
             idx++;
         }
@@ -602,9 +605,9 @@ int vfs_chdir(const char *path) {
 
     struct vfs_mount *m = find_mount(abs);
     if (!m) return -ENOENT;
-    int type;
-    if (m->ops->stat(m->fs_private, strip_mount(abs, m), &type, NULL) < 0) return -ENOENT;
-    if (type != VFS_TYPE_DIR) return -ENOTDIR;
+    struct stat st;
+    if (m->ops->stat(m->fs_private, strip_mount(abs, m), &st) < 0) return -ENOENT;
+    if (!S_ISDIR(st.st_mode)) return -ENOTDIR;
 
     struct task *t = task_current();
     if (!t) return -EINVAL;

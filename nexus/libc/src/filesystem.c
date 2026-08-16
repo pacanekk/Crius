@@ -55,17 +55,8 @@ int unlink(const char *path) {
 }
 
 int stat(const char *path, struct stat *st) {
-    int type;
-    size_t size;
-    long ret = _syscall3(SYS_STAT, (long)path, (long)&type, (long)&size);
+    long ret = _syscall2(SYS_STAT, (long)path, (long)st);
     if (ret < 0) { errno = (int)(-ret); return -1; }
-    memset(st, 0, sizeof(*st));
-    st->st_size = (off_t)size;
-    switch (type) {
-    case FILE_TYPE_FILE: st->st_mode = S_IFREG | 0644; break;
-    case FILE_TYPE_DIR:  st->st_mode = S_IFDIR | 0755; break;
-    case FILE_TYPE_DEV:  st->st_mode = S_IFBLK | 0660; break;
-    }
     return 0;
 }
 

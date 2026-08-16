@@ -48,7 +48,7 @@ int vfs_read(const char *path, char *buf, size_t bufsize);
 int vfs_read_at(const char *path, size_t offset, char *buf, size_t count);
 int vfs_truncate(const char *path);
 int vfs_delete(const char *path);
-int vfs_stat(const char *path, int *type, size_t *size);
+int vfs_stat(const char *path, struct stat *st);
 
 typedef void (*vfs_list_cb)(const char *name, int type, size_t size);
 int vfs_list(const char *path, vfs_list_cb cb);

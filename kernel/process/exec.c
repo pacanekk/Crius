@@ -31,10 +31,10 @@ int do_exec(const char *path, int argc, char **argv)
         return -1;
 
     /* 1. Stat the file */
-    int type;
-    size_t elf_size;
-    if (vfs_stat(path, &type, &elf_size) < 0)
+    struct stat st;
+    if (vfs_stat(path, &st) < 0)
         return -1;
+    size_t elf_size = (size_t)st.st_size;
 
     if (elf_size > 16 * 1024 * 1024)
         return -1;

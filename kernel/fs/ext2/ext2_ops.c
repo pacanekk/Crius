@@ -115,16 +115,24 @@ static int ext2_fs_open(void *fs_private, const char *path, int flags, struct fi
     return 0;
 }
 
-static int ext2_fs_stat(void *fs_private, const char *path, int *type, size_t *size) {
+static int ext2_fs_stat(void *fs_private, const char *path, struct stat *st) {
     ext2_restore_ctx(fs_private);
     uint32_t ino;
     if (ext2_resolve_path(path, &ino) < 0) return -ENOENT;
     struct ext2_inode inode;
-    if (ext2_read_inode(ino, &inode) < 0) return -ENOENT;
-    int t = VFS_TYPE_FILE;
-    if ((inode.i_mode & 0xF000) == EXT2_S_IFDIR) t = VFS_TYPE_DIR;
-    if (type) *type = t;
-    if (size) *size = inode.i_size;
+    if (ext2_read_inode(ino, &inode) < 0) return -EIO;
+    memset(st, 0, sizeof(*st));
+    st->st_ino = ino;
+    st->st_mode = (uint32_t)inode.i_mode;
+    st->st_nlink = (uint32_t)inode.i_links_count;
+    st->st_uid = (uint32_t)inode.i_uid;
+    st->st_gid = (uint32_t)inode.i_gid;
+    st->st_size = (int64_t)inode.i_size;
+    st->st_atime = (int64_t)inode.i_atime;
+    st->st_mtime = (int64_t)inode.i_mtime;
+    st->st_ctime = (int64_t)inode.i_ctime;
+    st->st_blksize = (int64_t)block_size;
+    st->st_blocks = (int64_t)inode.i_blocks;
     return 0;
 }
 

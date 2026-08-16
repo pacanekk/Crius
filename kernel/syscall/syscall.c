@@ -78,10 +78,9 @@ uint64_t syscall_handler(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3, uin
         return (uint64_t)vfs_delete((const char *)a1);
     }
     case SYS_STAT: {
-        if (!validate_user_string((const char *)a1, 255)) return (uint64_t)-1;
-        if (a2 && !validate_user_ptr_writable((void *)a2, sizeof(int))) return (uint64_t)-1;
-        if (a3 && !validate_user_ptr_writable((void *)a3, sizeof(size_t))) return (uint64_t)-1;
-        return (uint64_t)vfs_stat((const char *)a1, (int *)a2, (size_t *)a3);
+        if (!validate_user_string((const char *)a1, 255)) return (uint64_t)-EFAULT;
+        if (!validate_user_ptr_writable((void *)a2, sizeof(struct stat))) return (uint64_t)-EFAULT;
+        return (uint64_t)vfs_stat((const char *)a1, (struct stat *)a2);
     }
     case SYS_CHDIR: {
         if (!validate_user_string((const char *)a1, 255)) return (uint64_t)-1;

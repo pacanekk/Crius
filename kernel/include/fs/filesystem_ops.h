@@ -17,7 +17,7 @@ struct filesystem_ops {
 
     int (*open)(void *fs_private, const char *path, int flags, struct file *file);
 
-    int (*stat)(void *fs_private, const char *path, int *type, size_t *size);
+    int (*stat)(void *fs_private, const char *path, struct stat *st);
 
     int (*create)(void *fs_private, const char *path);
 

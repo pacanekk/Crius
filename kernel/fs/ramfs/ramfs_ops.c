@@ -118,14 +118,21 @@ static int ramfs_fs_open(void *fs_private, const char *path, int flags, struct f
     return 0;
 }
 
-static int ramfs_fs_stat(void *fs_private, const char *path, int *type, size_t *size) {
+static int ramfs_fs_stat(void *fs_private, const char *path, struct stat *st) {
     (void)fs_private;
     int idx;
     if (ramfs_resolve(path, &idx) < 0) return -ENOENT;
     struct ramfs_inode *ino = ramfs_get_inode(idx);
     if (!ino) return -ENOENT;
-    if (type) *type = ino->type;
-    if (size) *size = ino->size;
+    memset(st, 0, sizeof(*st));
+    st->st_ino = (uint32_t)idx;
+    if (ino->type == T_DIR)      st->st_mode = S_IFDIR | 0755;
+    else if (ino->type == T_DEV) st->st_mode = S_IFBLK | 0660;
+    else                         st->st_mode = S_IFREG | 0644;
+    st->st_nlink = (ino->type == T_DIR) ? 2 : 1;
+    st->st_uid = 0;
+    st->st_gid = 0;
+    st->st_size = (int64_t)ino->size;
     return 0;
 }
 
