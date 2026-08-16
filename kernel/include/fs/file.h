@@ -3,17 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
-
-#define O_RDONLY    0
-#define O_WRONLY    1
-#define O_RDWR      2
-#define O_CREATE    4
-#define O_APPEND    8
-#define O_TRUNC     16
-
-#define FILE_TYPE_FILE  1
-#define FILE_TYPE_DIR   2
-#define FILE_TYPE_DEV   3
+#include <crius/abi.h>
 
 /* Directory entry returned by read() on a directory fd */
 struct dirent {

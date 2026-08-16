@@ -7,7 +7,7 @@ NASM = nasm
 
 KERNEL_DIR   = .
 BUILD_DIR    = ../build
-FREESTANDING_HDRS ?= freestanding-c-hdrs/include
+FREESTANDING_HDRS ?= ../freestanding-c-hdrs/include
 
 # Kernel C flags — upper half, kernel model
 KERNEL_CFLAGS = -Wall -Wextra -std=gnu11 -nostdinc -ffreestanding \

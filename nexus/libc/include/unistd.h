@@ -2,9 +2,15 @@
 #define NEXUS_UNISTD_H
 
 #include <stddef.h>
+#include <errno.h>
 #include <sys/types.h>
 
 struct mem_stats;
+
+/* Standard file descriptor numbers */
+#define STDIN_FILENO  0
+#define STDOUT_FILENO 1
+#define STDERR_FILENO 2
 
 /* ===== Process ===== */
 void    exit(int code);

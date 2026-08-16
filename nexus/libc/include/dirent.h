@@ -2,17 +2,23 @@
 #define NEXUS_DIRENT_H
 
 #include <stdint.h>
+#include <sys/types.h>
+#include <crius/abi.h>
 
-/* File type constants */
-#define FILE_TYPE_FILE      1
-#define FILE_TYPE_DIR       2
-#define FILE_TYPE_DEV       3
+/* d_type aliases for ABI file types */
+#define DT_REG   FILE_TYPE_FILE
+#define DT_DIR   FILE_TYPE_DIR
+#define DT_BLK   FILE_TYPE_DEV
+#define DT_CHR   4   /* Crius currently does not distinguish char vs block devices */
+#define DT_FIFO  5
+#define DT_LNK   6
+#define DT_SOCK  7
 
 /* Directory entry returned by read() on a directory fd */
 struct dirent {
-    uint32_t inode;
-    uint8_t  type;
-    char     name[256];
+    ino_t         d_ino;
+    unsigned char d_type;
+    char          d_name[256];
 };
 
 /* Open a directory for reading - returns fd, or -1 on error */

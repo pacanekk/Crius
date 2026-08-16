@@ -92,7 +92,7 @@ static void load_dir_names(const char *path) {
     struct dirent de;
     while (readdir(fd, &de) > 0 && dir_name_count < MAX_DIR_ENTRIES) {
         int j;
-        for (j = 0; j < 31 && de.name[j]; j++) dir_names[dir_name_count][j] = de.name[j];
+        for (j = 0; j < 31 && de.d_name[j]; j++) dir_names[dir_name_count][j] = de.d_name[j];
         dir_names[dir_name_count][j] = '\0';
         dir_name_count++;
     }
@@ -247,23 +247,23 @@ static void load_tab_files(const char *dir_path) {
     while (readdir(fd, &de) > 0 && tab_fmcount < 16) {
         /* Check if name matches prefix */
         int nl = 0;
-        while (de.name[nl] && nl < 127) {
+        while (de.d_name[nl] && nl < 127) {
             if (nl >= tab_file_prefix_len) break;
-            if (de.name[nl] != tab_file_prefix[nl]) break;
+            if (de.d_name[nl] != tab_file_prefix[nl]) break;
             nl++;
         }
         if (nl >= tab_file_prefix_len) {
             int ml = 0;
-            while (de.name[ml] && ml < 127) { tab_fmatches[tab_fmcount][ml] = de.name[ml]; ml++; }
+            while (de.d_name[ml] && ml < 127) { tab_fmatches[tab_fmcount][ml] = de.d_name[ml]; ml++; }
             tab_fmatches[tab_fmcount][ml] = '\0';
             int j;
-            for (j = 0; de.name[j] && i + j < 254; j++) fullpath[i + j] = de.name[j];
+            for (j = 0; de.d_name[j] && i + j < 254; j++) fullpath[i + j] = de.d_name[j];
             fullpath[i + j] = '\0';
             struct stat st;
             if (stat(fullpath, &st) == 0)
-                tab_ftypes[tab_fmcount] = st.type;
+                tab_ftypes[tab_fmcount] = (int)st.st_mode;
             else
-                tab_ftypes[tab_fmcount] = FILE_TYPE_FILE;
+                tab_ftypes[tab_fmcount] = S_IFREG;
             tab_fmcount++;
         }
     }
@@ -351,12 +351,12 @@ void tab_complete(void) {
             while (tab_fmatches[0][namelen]) namelen++;
             for (int i = flen; i < namelen; i++)
                 insert_char(tab_fmatches[0][i]);
-            if (tab_ftypes[0] == FILE_TYPE_DIR)
+            if (S_ISDIR(tab_ftypes[0]))
                 insert_char('/');
         } else if (tab_fmcount > 1) {
             shell_putc('\n');
             for (int i = 0; i < tab_fmcount; i++) {
-                if (tab_ftypes[i] == FILE_TYPE_DIR)
+                if (S_ISDIR(tab_ftypes[i]))
                     ansi_write_colored(tab_fmatches[i], 96); /* bright cyan */
                 else
                     ansi_write_colored(tab_fmatches[i], 92); /* bright green */

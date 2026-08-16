@@ -268,8 +268,8 @@ struct file *vfs_open(const char *abs_path, int flags) {
         f->priv = NULL;
     }
 
-    /* If O_CREATE, try the first mount (ramfs root) */
-    if (flags & O_CREATE) {
+    /* If O_CREAT, try the first mount (ramfs root) */
+    if (flags & O_CREAT) {
         m = matches[0];
         rel = strip_mount(abs, m);
         if (m->ops->open(m->fs_private, rel, flags, f) == 0) {

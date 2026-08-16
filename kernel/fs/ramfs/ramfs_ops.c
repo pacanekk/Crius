@@ -92,7 +92,7 @@ static int ramfs_fs_open(void *fs_private, const char *path, int flags, struct f
     (void)fs_private;
     int idx;
     if (ramfs_resolve(path, &idx) < 0) {
-        if (flags & O_CREATE) {
+        if (flags & O_CREAT) {
             if (ramfs_create(path) < 0) return -1;
             if (ramfs_resolve(path, &idx) < 0) return -1;
         } else {

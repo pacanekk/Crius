@@ -61,6 +61,20 @@ struct proc_info {
 #define FILE_TYPE_DIR      2
 #define FILE_TYPE_DEV      3
 
+/* ===== Open flags (used by SYS_OPEN) ===== */
+
+#define O_RDONLY    0
+#define O_WRONLY    1
+#define O_RDWR      2
+#define O_CREAT     4
+#define O_APPEND    8
+#define O_TRUNC     16
+#define O_EXCL      32
+#define O_NOCTTY    64
+#define O_NONBLOCK  128
+#define O_CLOEXEC   256
+#define O_SYNC      512
+
 /* ===== Block device info (returned by BLK_GET_INFO ioctl) ===== */
 
 struct block_dev_info {
@@ -114,6 +128,42 @@ struct blk_io {
     size_t count;
     void *buf;
 };
+
+/* ===== Error numbers (returned as negative values by the kernel) ===== */
+
+#define EPERM        1
+#define ENOENT       2
+#define ESRCH        3
+#define EINTR        4
+#define EIO          5
+#define ENXIO        6
+#define E2BIG        7
+#define ENOEXEC      8
+#define EBADF        9
+#define ECHILD       10
+#define EAGAIN       11
+#define ENOMEM       12
+#define EACCES       13
+#define EFAULT       14
+#define ENOTBLK      15
+#define EBUSY        16
+#define EEXIST       17
+#define ENOTDIR      18
+#define EISDIR       19
+#define EINVAL       22
+#define ENFILE       23
+#define EMFILE       24
+#define ENOTTY       25
+#define EFBIG        27
+#define ENOSPC       28
+#define ESPIPE       29
+#define EROFS        30
+#define EMLINK       31
+#define EPIPE        32
+#define EDOM         33
+#define ERANGE       34
+#define ENOSYS       35
+#define ENOTEMPTY    39
 
 /* ===== Syscall numbers ===== */
 /*

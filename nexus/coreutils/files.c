@@ -27,11 +27,11 @@ int ls_main(int argc, char **argv) {
     int any = 0;
     while (read(fd, &de, sizeof(de)) > 0) {
         any = 1;
-        if (de.type == FILE_TYPE_DIR)
+        if (de.d_type == DT_DIR)
             prog_putc('/', 0x0000FFFF, 0);
-        uint32_t color = de.type == FILE_TYPE_DIR ? 0x0000FFFF :
-                         de.type == FILE_TYPE_DEV ? 0x00FF00FF : 0x00FFFFFF;
-        prog_print_color(de.name, color, 0);
+        uint32_t color = de.d_type == DT_DIR ? 0x0000FFFF :
+                         de.d_type == DT_BLK ? 0x00FF00FF : 0x00FFFFFF;
+        prog_print_color(de.d_name, color, 0);
         if (show_size) {
             prog_print_color("  ", 0x00FFFFFF, 0);
             struct stat st;
@@ -40,14 +40,14 @@ int ls_main(int argc, char **argv) {
             while (path[pl] && pl < 250) { fullpath[pl] = path[pl]; pl++; }
             if (pl > 0 && fullpath[pl-1] != '/' && pl < 254) fullpath[pl++] = '/';
             int nl = 0;
-            while (de.name[nl] && pl + nl < 255) { fullpath[pl + nl] = de.name[nl]; nl++; }
+            while (de.d_name[nl] && pl + nl < 255) { fullpath[pl + nl] = de.d_name[nl]; nl++; }
             fullpath[pl + nl] = '\0';
             stat(fullpath, &st);
             char sbuf[16]; int sn = 0;
-            if (st.type == FILE_TYPE_DEV) { sbuf[sn++] = 'd'; sbuf[sn++] = 'e'; sbuf[sn++] = 'v'; }
-            else if (st.type == FILE_TYPE_DIR) { sbuf[sn++] = '-'; }
+            if (S_ISBLK(st.st_mode)) { sbuf[sn++] = 'd'; sbuf[sn++] = 'e'; sbuf[sn++] = 'v'; }
+            else if (S_ISDIR(st.st_mode)) { sbuf[sn++] = '-'; }
             else {
-                size_t sz = st.size;
+                size_t sz = st.st_size;
                 if (sz < 1024) {
                     if (sz == 0) sbuf[sn++] = '0';
                     else { char tmp[16]; int tm = 0; while (sz) { tmp[tm++] = '0' + (sz % 10); sz /= 10; } while (tm > 0) sbuf[sn++] = tmp[--tm]; }
@@ -94,7 +94,7 @@ int write_main(int argc, char **argv) {
         if (i < argc - 1 && pos < 511) text[pos++] = ' ';
     }
     text[pos++] = '\n';
-    int fd = open(argv[1], O_WRONLY | O_CREATE | O_TRUNC);
+    int fd = open(argv[1], O_WRONLY | O_CREAT | O_TRUNC);
     if (fd < 0) { prog_print_color("Failed to create file\n", 0x00FF0000, 0); return 1; }
     write(fd, text, pos);
     close(fd);

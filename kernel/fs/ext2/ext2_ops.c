@@ -85,7 +85,7 @@ static int ext2_fs_open(void *fs_private, const char *path, int flags, struct fi
     ext2_restore_ctx(fs_private);
     uint32_t ino;
     if (ext2_resolve_path(path, &ino) < 0) {
-        if (flags & O_CREATE) {
+        if (flags & O_CREAT) {
             char parent[256], fname[256];
             if (ext2_split_path(path, parent, fname) < 0) return -1;
             uint32_t parent_ino;

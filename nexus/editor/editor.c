@@ -227,7 +227,7 @@ void edit_handle_char(unsigned char c) {
     if (c == 0x1B || c == 0x13) {
         if (edit_len < MAX_FILESIZE && (edit_len == 0 || edit_buf[edit_len - 1] != '\n'))
             edit_buf[edit_len++] = '\n';
-        int fd = open(edit_name, O_WRONLY | O_CREATE);
+        int fd = open(edit_name, O_WRONLY | O_CREAT);
         if (fd >= 0) {
             write(fd, edit_buf, edit_len);
             close(fd);
