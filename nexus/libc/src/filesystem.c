@@ -89,16 +89,68 @@ int write_file(const char *path, const char *data, size_t len) {
     return ret;
 }
 
-/* Directory operations - FD-based */
-int opendir(const char *path) {
-    return open(path, O_RDONLY);
+/* Directory operations - POSIX style */
+#define MAX_DIRS 8
+
+struct __dirstream {
+    int fd;
+    int in_use;
+    char path[256];
+    struct dirent ent;
+};
+
+static struct __dirstream dirs[MAX_DIRS];
+
+DIR *opendir(const char *path) {
+    int free_idx = -1;
+    for (int i = 0; i < MAX_DIRS; i++) {
+        if (!dirs[i].in_use) { free_idx = i; break; }
+    }
+    if (free_idx < 0) { errno = ENOMEM; return NULL; }
+
+    int fd = open(path, O_RDONLY);
+    if (fd < 0) return NULL;
+
+    int i = 0;
+    for (; path[i] && i < 255; i++) dirs[free_idx].path[i] = path[i];
+    dirs[free_idx].path[i] = '\0';
+    dirs[free_idx].fd = fd;
+    dirs[free_idx].in_use = 1;
+    return (DIR *)&dirs[free_idx];
 }
 
-int readdir(int fd, struct dirent *entry) {
-    ssize_t n = read(fd, entry, sizeof(struct dirent));
-    if (n == (ssize_t)sizeof(struct dirent)) return 1;
-    if (n == 0) return 0;
-    if (n < 0) return -1;   /* read() already set errno */
+struct dirent *readdir(DIR *dir) {
+    if (!dir) { errno = EBADF; return NULL; }
+    struct __dirstream *d = (struct __dirstream *)dir;
+    if (!d->in_use || d->fd < 0) { errno = EBADF; return NULL; }
+
+    ssize_t n = read(d->fd, &d->ent, sizeof(struct dirent));
+    if (n == (ssize_t)sizeof(struct dirent)) return &d->ent;
+    if (n == 0) return NULL;
+    if (n < 0) return NULL;   /* read() already set errno */
     errno = EINVAL;
-    return -1;
+    return NULL;
+}
+
+int closedir(DIR *dir) {
+    if (!dir) { errno = EBADF; return -1; }
+    struct __dirstream *d = (struct __dirstream *)dir;
+    if (!d->in_use) { errno = EBADF; return -1; }
+
+    int ret = close(d->fd);
+    d->in_use = 0;
+    d->fd = -1;
+    return ret;
+}
+
+void rewinddir(DIR *dir) {
+    if (!dir) return;
+    struct __dirstream *d = (struct __dirstream *)dir;
+    if (!d->in_use) return;
+
+    int newfd = open(d->path, O_RDONLY);
+    if (newfd >= 0) {
+        close(d->fd);
+        d->fd = newfd;
+    }
 }

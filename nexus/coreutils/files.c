@@ -20,18 +20,18 @@ int ls_main(int argc, char **argv) {
         }
     }
 
-    int fd = open(path, O_RDONLY);
-    if (fd < 0) { prog_print_color("No such directory\n", 0x00FF0000, 0); return 1; }
+    DIR *d = opendir(path);
+    if (!d) { prog_print_color("No such directory\n", 0x00FF0000, 0); return 1; }
 
-    struct dirent de;
+    struct dirent *de;
     int any = 0;
-    while (read(fd, &de, sizeof(de)) > 0) {
+    while ((de = readdir(d)) != NULL) {
         any = 1;
-        if (de.d_type == DT_DIR)
+        if (de->d_type == DT_DIR)
             prog_putc('/', 0x0000FFFF, 0);
-        uint32_t color = de.d_type == DT_DIR ? 0x0000FFFF :
-                         de.d_type == DT_BLK ? 0x00FF00FF : 0x00FFFFFF;
-        prog_print_color(de.d_name, color, 0);
+        uint32_t color = de->d_type == DT_DIR ? 0x0000FFFF :
+                         de->d_type == DT_BLK ? 0x00FF00FF : 0x00FFFFFF;
+        prog_print_color(de->d_name, color, 0);
         if (show_size) {
             prog_print_color("  ", 0x00FFFFFF, 0);
             struct stat st;
@@ -40,7 +40,7 @@ int ls_main(int argc, char **argv) {
             while (path[pl] && pl < 250) { fullpath[pl] = path[pl]; pl++; }
             if (pl > 0 && fullpath[pl-1] != '/' && pl < 254) fullpath[pl++] = '/';
             int nl = 0;
-            while (de.d_name[nl] && pl + nl < 255) { fullpath[pl + nl] = de.d_name[nl]; nl++; }
+            while (de->d_name[nl] && pl + nl < 255) { fullpath[pl + nl] = de->d_name[nl]; nl++; }
             fullpath[pl + nl] = '\0';
             stat(fullpath, &st);
             char sbuf[16]; int sn = 0;
@@ -68,7 +68,7 @@ int ls_main(int argc, char **argv) {
         }
         prog_newline();
     }
-    close(fd);
+    closedir(d);
     if (!any) { prog_print_color("(empty)\n", 0x00FFFFFF, 0); }
     return 0;
 }

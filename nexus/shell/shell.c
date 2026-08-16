@@ -87,16 +87,16 @@ static int dir_name_count = 0;
 
 static void load_dir_names(const char *path) {
     dir_name_count = 0;
-    int fd = opendir(path);
-    if (fd < 0) return;
-    struct dirent de;
-    while (readdir(fd, &de) > 0 && dir_name_count < MAX_DIR_ENTRIES) {
+    DIR *d = opendir(path);
+    if (!d) return;
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL && dir_name_count < MAX_DIR_ENTRIES) {
         int j;
-        for (j = 0; j < 31 && de.d_name[j]; j++) dir_names[dir_name_count][j] = de.d_name[j];
+        for (j = 0; j < 31 && de->d_name[j]; j++) dir_names[dir_name_count][j] = de->d_name[j];
         dir_names[dir_name_count][j] = '\0';
         dir_name_count++;
     }
-    close(fd);
+    closedir(d);
 }
 
 void redraw_line_plain(void) {
@@ -232,8 +232,8 @@ static int tab_file_prefix_len = 0;
 
 static void load_tab_files(const char *dir_path) {
     tab_fmcount = 0;
-    int fd = opendir(dir_path);
-    if (fd < 0) return;
+    DIR *d = opendir(dir_path);
+    if (!d) return;
 
     int dlen = 0;
     while (dir_path[dlen]) dlen++;
@@ -243,21 +243,21 @@ static void load_tab_files(const char *dir_path) {
     if (i > 0 && fullpath[i - 1] != '/' && i < 254)
         fullpath[i++] = '/';
 
-    struct dirent de;
-    while (readdir(fd, &de) > 0 && tab_fmcount < 16) {
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL && tab_fmcount < 16) {
         /* Check if name matches prefix */
         int nl = 0;
-        while (de.d_name[nl] && nl < 127) {
+        while (de->d_name[nl] && nl < 127) {
             if (nl >= tab_file_prefix_len) break;
-            if (de.d_name[nl] != tab_file_prefix[nl]) break;
+            if (de->d_name[nl] != tab_file_prefix[nl]) break;
             nl++;
         }
         if (nl >= tab_file_prefix_len) {
             int ml = 0;
-            while (de.d_name[ml] && ml < 127) { tab_fmatches[tab_fmcount][ml] = de.d_name[ml]; ml++; }
+            while (de->d_name[ml] && ml < 127) { tab_fmatches[tab_fmcount][ml] = de->d_name[ml]; ml++; }
             tab_fmatches[tab_fmcount][ml] = '\0';
             int j;
-            for (j = 0; de.d_name[j] && i + j < 254; j++) fullpath[i + j] = de.d_name[j];
+            for (j = 0; de->d_name[j] && i + j < 254; j++) fullpath[i + j] = de->d_name[j];
             fullpath[i + j] = '\0';
             struct stat st;
             if (stat(fullpath, &st) == 0)
@@ -267,7 +267,7 @@ static void load_tab_files(const char *dir_path) {
             tab_fmcount++;
         }
     }
-    close(fd);
+    closedir(d);
 }
 
 void tab_complete(void) {

@@ -14,17 +14,26 @@
 #define DT_LNK   6
 #define DT_SOCK  7
 
-/* Directory entry returned by read() on a directory fd */
+/* Directory entry returned by readdir() */
 struct dirent {
     ino_t         d_ino;
     unsigned char d_type;
     char          d_name[256];
 };
 
-/* Open a directory for reading - returns fd, or -1 on error */
-int opendir(const char *path);
+/* Opaque directory stream */
+typedef struct __dirstream DIR;
 
-/* Read next directory entry - returns 1 on success, 0 on EOF, -1 on error */
-int readdir(int fd, struct dirent *entry);
+/* Open a directory - returns DIR* on success, NULL on error */
+DIR *opendir(const char *path);
+
+/* Read next directory entry - returns pointer to entry, NULL on EOF/error */
+struct dirent *readdir(DIR *dir);
+
+/* Close a directory - returns 0 on success, -1 on error */
+int closedir(DIR *dir);
+
+/* Rewind directory stream to the beginning */
+void rewinddir(DIR *dir);
 
 #endif

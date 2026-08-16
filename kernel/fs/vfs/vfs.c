@@ -94,7 +94,8 @@ struct vfs_mount *find_mount(const char *path) {
 const char *strip_mount(const char *path, struct vfs_mount *m) {
     int mlen = path_len(m->path);
     if (path[mlen] == '\0') return "/";
-    return path + mlen;
+    if (path[mlen] == '/') return path + mlen;
+    return path + mlen - 1;
 }
 
 void resolve_abs(const char *path, char *out, int outsize) {
