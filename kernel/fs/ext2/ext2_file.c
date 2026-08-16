@@ -9,7 +9,7 @@
 
 int ext2_read_file(uint32_t ino, void *buf, size_t bufsize) {
     struct ext2_inode inode;
-    if (ext2_read_inode(ino, &inode) < 0) return -1;
+    if (ext2_read_inode(ino, &inode) < 0) return -ENOENT;
 
     if ((inode.i_mode & 0xF000) == EXT2_S_IFLNK) {
         if (inode.i_size < 60) {
@@ -20,13 +20,13 @@ int ext2_read_file(uint32_t ino, void *buf, size_t bufsize) {
         }
     }
 
-    if ((inode.i_mode & 0xF000) != EXT2_S_IFREG) return -1;
+    if ((inode.i_mode & 0xF000) != EXT2_S_IFREG) return -ENOENT;
 
     size_t remaining = inode.i_size < bufsize ? inode.i_size : bufsize;
     size_t pos = 0;
     uint32_t logical = 0;
     uint8_t *block_buf = kmalloc(block_size);
-    if (!block_buf) return -1;
+    if (!block_buf) return -ENOENT;
 
     while (remaining > 0) {
         uint32_t phys = get_block_from_inode(&inode, logical);
@@ -34,7 +34,7 @@ int ext2_read_file(uint32_t ino, void *buf, size_t bufsize) {
 
         if (ext2_read_block(phys, block_buf) < 0) {
             kfree(block_buf);
-            return -1;
+            return -ENOENT;
         }
 
         size_t chunk = remaining < block_size ? remaining : block_size;
@@ -52,12 +52,12 @@ int ext2_read_file(uint32_t ino, void *buf, size_t bufsize) {
 
 int ext2_write_file(uint32_t ino, const void *buf, size_t len) {
     struct ext2_inode inode;
-    if (ext2_read_inode(ino, &inode) < 0) return -1;
-    if ((inode.i_mode & 0xF000) != EXT2_S_IFREG) return -1;
+    if (ext2_read_inode(ino, &inode) < 0) return -ENOENT;
+    if ((inode.i_mode & 0xF000) != EXT2_S_IFREG) return -ENOENT;
 
     uint32_t blocks_needed = (len + block_size - 1) / block_size;
     uint8_t *block_buf = kmalloc(block_size);
-    if (!block_buf) return -1;
+    if (!block_buf) return -ENOENT;
 
     size_t pos = 0;
     for (uint32_t i = 0; i < blocks_needed; i++) {
@@ -68,7 +68,7 @@ int ext2_write_file(uint32_t ino, const void *buf, size_t len) {
         uint32_t phys = get_block_from_inode(&inode, i);
         if (phys == 0) {
             phys = ext2_alloc_block();
-            if (phys == 0) { kfree(block_buf); return -1; }
+            if (phys == 0) { kfree(block_buf); return -ENOENT; }
             set_block_in_inode(&inode, i, phys);
         }
         ext2_write_block(phys, block_buf);
@@ -87,12 +87,12 @@ int ext2_write_file(uint32_t ino, const void *buf, size_t len) {
 
 int ext2_append_file(uint32_t ino, const void *buf, size_t len) {
     struct ext2_inode inode;
-    if (ext2_read_inode(ino, &inode) < 0) return -1;
-    if ((inode.i_mode & 0xF000) != EXT2_S_IFREG) return -1;
+    if (ext2_read_inode(ino, &inode) < 0) return -ENOENT;
+    if ((inode.i_mode & 0xF000) != EXT2_S_IFREG) return -ENOENT;
 
     uint32_t existing = inode.i_size;
     uint8_t *block_buf = kmalloc(block_size);
-    if (!block_buf) return -1;
+    if (!block_buf) return -ENOENT;
 
     size_t pos = 0;
     uint32_t offset = existing;
@@ -105,7 +105,7 @@ int ext2_append_file(uint32_t ino, const void *buf, size_t len) {
         uint32_t phys = get_block_from_inode(&inode, logical);
         if (phys == 0) {
             phys = ext2_alloc_block();
-            if (phys == 0) { kfree(block_buf); return -1; }
+            if (phys == 0) { kfree(block_buf); return -ENOENT; }
             memset(block_buf, 0, block_size);
             set_block_in_inode(&inode, logical, phys);
         } else {
@@ -134,11 +134,11 @@ int ext2_append_file(uint32_t ino, const void *buf, size_t len) {
 
 int ext2_write_at(uint32_t ino, size_t offset, const void *buf, size_t len) {
     struct ext2_inode inode;
-    if (ext2_read_inode(ino, &inode) < 0) return -1;
-    if ((inode.i_mode & 0xF000) != EXT2_S_IFREG) return -1;
+    if (ext2_read_inode(ino, &inode) < 0) return -ENOENT;
+    if ((inode.i_mode & 0xF000) != EXT2_S_IFREG) return -ENOENT;
 
     uint8_t *block_buf = kmalloc(block_size);
-    if (!block_buf) return -1;
+    if (!block_buf) return -ENOENT;
 
     size_t pos = 0;
     size_t file_offset = offset;
@@ -151,7 +151,7 @@ int ext2_write_at(uint32_t ino, size_t offset, const void *buf, size_t len) {
         uint32_t phys = get_block_from_inode(&inode, logical);
         if (phys == 0) {
             phys = ext2_alloc_block();
-            if (phys == 0) { kfree(block_buf); return -1; }
+            if (phys == 0) { kfree(block_buf); return -ENOENT; }
             memset(block_buf, 0, block_size);
             set_block_in_inode(&inode, logical, phys);
         } else {
@@ -181,15 +181,15 @@ int ext2_write_at(uint32_t ino, size_t offset, const void *buf, size_t len) {
 
 int ext2_read_at(uint32_t ino, size_t offset, void *buf, size_t count) {
     struct ext2_inode inode;
-    if (ext2_read_inode(ino, &inode) < 0) return -1;
-    if ((inode.i_mode & 0xF000) != EXT2_S_IFREG) return -1;
+    if (ext2_read_inode(ino, &inode) < 0) return -ENOENT;
+    if ((inode.i_mode & 0xF000) != EXT2_S_IFREG) return -ENOENT;
 
     if (offset >= inode.i_size) return 0;
     size_t avail = inode.i_size - offset;
     if (count > avail) count = avail;
 
     uint8_t *block_buf = kmalloc(block_size);
-    if (!block_buf) return -1;
+    if (!block_buf) return -ENOENT;
 
     size_t pos = 0;
     size_t file_offset = offset;
@@ -204,7 +204,7 @@ int ext2_read_at(uint32_t ino, size_t offset, void *buf, size_t count) {
 
         if (ext2_read_block(phys, block_buf) < 0) {
             kfree(block_buf);
-            return -1;
+            return -ENOENT;
         }
 
         memcpy((uint8_t *)buf + pos, block_buf + off_in_blk, chunk);
@@ -231,7 +231,7 @@ static int ext2_file_write(struct file *f, const char *buf, int count) {
     size_t write_offset = f->offset;
     if (f->flags & O_APPEND) {
         struct ext2_inode inode;
-        if (ext2_read_inode(ino, &inode) < 0) return -1;
+        if (ext2_read_inode(ino, &inode) < 0) return -ENOENT;
         write_offset = inode.i_size;
     }
     int ret = ext2_write_at(ino, write_offset, buf, count);

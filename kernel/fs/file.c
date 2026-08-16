@@ -40,27 +40,27 @@ void file_put(struct file *f) {
 }
 
 int file_read(struct file *f, char *buf, int count) {
-    if (!f || !f->used) return -1;
-    if (!f->ops) return -1;
+    if (!f || !f->used) return -EBADF;
+    if (!f->ops) return -EBADF;
     if (f->ops->readdir) {
-        if (count < (int)sizeof(struct dirent)) return -1;
+        if (count < (int)sizeof(struct dirent)) return -EINVAL;
         struct dirent *de = (struct dirent *)buf;
         int ret = f->ops->readdir(f, de);
         if (ret <= 0) return ret;
         return (int)sizeof(struct dirent);
     }
-    if (!f->ops->read) return -1;
+    if (!f->ops->read) return -EBADF;
     return f->ops->read(f, buf, count);
 }
 
 int file_write(struct file *f, const char *buf, int count) {
-    if (!f || !f->used) return -1;
-    if (!f->ops || !f->ops->write) return -1;
+    if (!f || !f->used) return -EBADF;
+    if (!f->ops || !f->ops->write) return -EBADF;
     return f->ops->write(f, buf, count);
 }
 
 int file_ioctl(struct file *f, unsigned long request, void *arg) {
-    if (!f || !f->used) return -1;
-    if (!f->ops || !f->ops->ioctl) return -1;
+    if (!f || !f->used) return -EBADF;
+    if (!f->ops || !f->ops->ioctl) return -EBADF;
     return f->ops->ioctl(f, request, arg);
 }

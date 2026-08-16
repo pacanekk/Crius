@@ -16,11 +16,11 @@ int local_memcmp(const void *a, const void *b, size_t n) {
 
 int ext2_list_dir(uint32_t ino, void (*cb)(const char *name, uint32_t ino, uint8_t type, void *ctx), void *ctx) {
     struct ext2_inode inode;
-    if (ext2_read_inode(ino, &inode) < 0) return -1;
-    if ((inode.i_mode & 0xF000) != EXT2_S_IFDIR) return -1;
+    if (ext2_read_inode(ino, &inode) < 0) return -ENOENT;
+    if ((inode.i_mode & 0xF000) != EXT2_S_IFDIR) return -ENOENT;
 
     uint8_t *buf = kmalloc(block_size);
-    if (!buf) return -1;
+    if (!buf) return -ENOENT;
 
     uint32_t dir_blocks = (inode.i_size + block_size - 1) / block_size;
     for (uint32_t logical = 0; logical < dir_blocks; logical++) {
@@ -29,7 +29,7 @@ int ext2_list_dir(uint32_t ino, void (*cb)(const char *name, uint32_t ino, uint8
 
         if (ext2_read_block(phys, buf) < 0) {
             kfree(buf);
-            return -1;
+            return -ENOENT;
         }
 
         uint32_t offset = 0;
@@ -56,11 +56,11 @@ int ext2_list_dir(uint32_t ino, void (*cb)(const char *name, uint32_t ino, uint8
 
 int ext2_lookup(uint32_t dir_ino, const char *name, uint32_t *out_ino) {
     struct ext2_inode inode;
-    if (ext2_read_inode(dir_ino, &inode) < 0) return -1;
-    if ((inode.i_mode & 0xF000) != EXT2_S_IFDIR) return -1;
+    if (ext2_read_inode(dir_ino, &inode) < 0) return -ENOENT;
+    if ((inode.i_mode & 0xF000) != EXT2_S_IFDIR) return -ENOENT;
 
     uint8_t *buf = kmalloc(block_size);
-    if (!buf) return -1;
+    if (!buf) return -ENOENT;
 
     uint32_t dir_blocks = (inode.i_size + block_size - 1) / block_size;
     for (uint32_t logical = 0; logical < dir_blocks; logical++) {
@@ -69,7 +69,7 @@ int ext2_lookup(uint32_t dir_ino, const char *name, uint32_t *out_ino) {
 
         if (ext2_read_block(phys, buf) < 0) {
             kfree(buf);
-            return -1;
+            return -ENOENT;
         }
 
         uint32_t offset = 0;
@@ -89,17 +89,17 @@ int ext2_lookup(uint32_t dir_ino, const char *name, uint32_t *out_ino) {
     }
 
     kfree(buf);
-    return -1;
+    return -ENOENT;
 }
 
 /* ===== Add directory entry ===== */
 
 int add_dirent(uint32_t dir_ino, uint32_t child_ino, const char *name, uint8_t type) {
     struct ext2_inode dir_inode;
-    if (ext2_read_inode(dir_ino, &dir_inode) < 0) return -1;
+    if (ext2_read_inode(dir_ino, &dir_inode) < 0) return -ENOENT;
 
     uint8_t *buf = kmalloc(block_size);
-    if (!buf) return -1;
+    if (!buf) return -ENOENT;
 
     uint32_t name_len = strlen(name);
     uint32_t new_reclen = ((8 + name_len + 3) & ~3);
@@ -112,7 +112,7 @@ int add_dirent(uint32_t dir_ino, uint32_t child_ino, const char *name, uint8_t t
         if (phys == 0) break;
         if (ext2_read_block(phys, buf) < 0) {
             kfree(buf);
-            return -1;
+            return -ENOENT;
         }
 
         uint32_t offset = 0;
@@ -150,7 +150,7 @@ int add_dirent(uint32_t dir_ino, uint32_t child_ino, const char *name, uint8_t t
     }
 
     uint32_t new_block = ext2_alloc_block();
-    if (new_block == 0) { kfree(buf); return -1; }
+    if (new_block == 0) { kfree(buf); return -ENOENT; }
     memset(buf, 0, block_size);
     struct ext2_dirent *de = (struct ext2_dirent *)buf;
     de->inode = child_ino;
@@ -173,10 +173,10 @@ int add_dirent(uint32_t dir_ino, uint32_t child_ino, const char *name, uint8_t t
 
 int ext2_create_file(uint32_t dir_ino, const char *name, uint16_t mode) {
     uint32_t existing;
-    if (ext2_lookup(dir_ino, name, &existing) == 0) return -1;
+    if (ext2_lookup(dir_ino, name, &existing) == 0) return -ENOENT;
 
     uint32_t new_ino = ext2_alloc_inode(0);
-    if (new_ino == 0) return -1;
+    if (new_ino == 0) return -ENOENT;
 
     struct ext2_inode inode;
     memset(&inode, 0, sizeof(inode));
@@ -188,7 +188,7 @@ int ext2_create_file(uint32_t dir_ino, const char *name, uint16_t mode) {
 
     if (add_dirent(dir_ino, new_ino, name, 1) < 0) {
         ext2_free_inode(new_ino);
-        return -1;
+        return -ENOENT;
     }
     return 0;
 }
@@ -197,13 +197,13 @@ int ext2_create_file(uint32_t dir_ino, const char *name, uint16_t mode) {
 
 int ext2_mkdir(uint32_t dir_ino, const char *name) {
     uint32_t existing;
-    if (ext2_lookup(dir_ino, name, &existing) == 0) return -1;
+    if (ext2_lookup(dir_ino, name, &existing) == 0) return -ENOENT;
 
     uint32_t new_ino = ext2_alloc_inode(1);
-    if (new_ino == 0) return -1;
+    if (new_ino == 0) return -ENOENT;
 
     uint32_t new_block = ext2_alloc_block();
-    if (new_block == 0) { ext2_free_inode(new_ino); return -1; }
+    if (new_block == 0) { ext2_free_inode(new_ino); return -ENOENT; }
 
     struct ext2_inode inode;
     memset(&inode, 0, sizeof(inode));
@@ -214,7 +214,7 @@ int ext2_mkdir(uint32_t dir_ino, const char *name) {
     inode.i_block[0] = new_block;
 
     uint8_t *buf = kmalloc(block_size);
-    if (!buf) { ext2_free_inode(new_ino); return -1; }
+    if (!buf) { ext2_free_inode(new_ino); return -ENOENT; }
     memset(buf, 0, block_size);
 
     struct ext2_dirent *dot = (struct ext2_dirent *)buf;
@@ -240,7 +240,7 @@ int ext2_mkdir(uint32_t dir_ino, const char *name) {
     if (add_dirent(dir_ino, new_ino, name, 2) < 0) {
         ext2_free_inode(new_ino);
         ext2_free_block(new_block);
-        return -1;
+        return -ENOENT;
     }
 
     struct ext2_inode parent_inode;
@@ -255,13 +255,13 @@ int ext2_mkdir(uint32_t dir_ino, const char *name) {
 
 int ext2_unlink(uint32_t dir_ino, const char *name) {
     uint32_t ino;
-    if (ext2_lookup(dir_ino, name, &ino) < 0) return -1;
+    if (ext2_lookup(dir_ino, name, &ino) < 0) return -ENOENT;
 
     struct ext2_inode dir_inode;
-    if (ext2_read_inode(dir_ino, &dir_inode) < 0) return -1;
+    if (ext2_read_inode(dir_ino, &dir_inode) < 0) return -ENOENT;
 
     uint8_t *buf = kmalloc(block_size);
-    if (!buf) return -1;
+    if (!buf) return -ENOENT;
 
     uint32_t dir_blocks = dir_inode.i_size / block_size;
     for (uint32_t b = 0; b < dir_blocks; b++) {
@@ -303,5 +303,5 @@ int ext2_unlink(uint32_t dir_ino, const char *name) {
     }
 
     kfree(buf);
-    return -1;
+    return -ENOENT;
 }

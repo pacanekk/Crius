@@ -185,7 +185,7 @@ void vfs_init(void) {
 int vfs_get_fs_info(const char *mount_path, struct vfs_fs_info *out) {
     struct vfs_mount *matches[4];
     int n = find_mounts(mount_path, matches, 4);
-    if (n == 0) return -1;
+    if (n == 0) return -ENOENT;
 
     memset(out, 0, sizeof(*out));
     out->mounted = 1;
@@ -199,7 +199,7 @@ int vfs_get_fs_info(const char *mount_path, struct vfs_fs_info *out) {
         }
     }
     if (!m) m = matches[0];
-    if (!m || !m->ops) return -1;
+    if (!m || !m->ops) return -ENOENT;
 
     /* Copy filesystem name */
     const char *name = m->ops->name;
@@ -294,9 +294,9 @@ struct file *vfs_open(const char *abs_path, int flags) {
 /* ===== vfs_dir_readdir - stateful, uses dir_handle ===== */
 
 int vfs_dir_readdir(struct file *f, struct dirent *de) {
-    if (!f || !f->used || !f->ops || !f->ops->readdir) return -1;
+    if (!f || !f->used || !f->ops || !f->ops->readdir) return -EBADF;
     struct dir_handle *dh = (struct dir_handle *)f->priv;
-    if (!dh) return -1;
+    if (!dh) return -EBADF;
 
     int ret = dh->mount->ops->readdir(dh->mount->fs_private, dh->rel_path, dh->position, de);
     if (ret <= 0) return ret;
@@ -316,7 +316,7 @@ int vfs_mkdir(const char *path) {
             matches[i]->ops->mkdir(matches[i]->fs_private, strip_mount(abs, matches[i])) == 0)
             return 0;
     }
-    return -1;
+    return -ENOENT;
 }
 
 int vfs_create(const char *path) {
@@ -329,7 +329,7 @@ int vfs_create(const char *path) {
             matches[i]->ops->create(matches[i]->fs_private, strip_mount(abs, matches[i])) == 0)
             return 0;
     }
-    return -1;
+    return -ENOENT;
 }
 
 int vfs_write(const char *path, const char *data, size_t len) {
@@ -342,7 +342,7 @@ int vfs_write(const char *path, const char *data, size_t len) {
         int ret = matches[i]->ops->write_at(matches[i]->fs_private, strip_mount(abs, matches[i]), 0, data, len);
         if (ret >= 0) return ret;
     }
-    return -1;
+    return -ENOENT;
 }
 
 int vfs_append(const char *path, const char *data, size_t len) {
@@ -366,7 +366,7 @@ int vfs_append(const char *path, const char *data, size_t len) {
         if (matches[0]->ops->create(matches[0]->fs_private, rel) == 0)
             return matches[0]->ops->write_at(matches[0]->fs_private, rel, 0, data, len);
     }
-    return -1;
+    return -ENOENT;
 }
 
 int vfs_write_at(const char *path, size_t offset, const char *data, size_t len) {
@@ -379,7 +379,7 @@ int vfs_write_at(const char *path, size_t offset, const char *data, size_t len) 
         int ret = matches[i]->ops->write_at(matches[i]->fs_private, strip_mount(abs, matches[i]), offset, data, len);
         if (ret >= 0) return ret;
     }
-    return -1;
+    return -ENOENT;
 }
 
 int vfs_read(const char *path, char *buf, size_t bufsize) {
@@ -392,7 +392,7 @@ int vfs_read(const char *path, char *buf, size_t bufsize) {
         int ret = matches[i]->ops->read_at(matches[i]->fs_private, strip_mount(abs, matches[i]), 0, buf, bufsize);
         if (ret >= 0) return ret;
     }
-    return -1;
+    return -ENOENT;
 }
 
 int vfs_read_at(const char *path, size_t offset, char *buf, size_t count) {
@@ -405,7 +405,7 @@ int vfs_read_at(const char *path, size_t offset, char *buf, size_t count) {
         int ret = matches[i]->ops->read_at(matches[i]->fs_private, strip_mount(abs, matches[i]), offset, buf, count);
         if (ret >= 0) return ret;
     }
-    return -1;
+    return -ENOENT;
 }
 
 int vfs_truncate(const char *path) {
@@ -418,7 +418,7 @@ int vfs_truncate(const char *path) {
             matches[i]->ops->truncate(matches[i]->fs_private, strip_mount(abs, matches[i])) == 0)
             return 0;
     }
-    return -1;
+    return -ENOENT;
 }
 
 int vfs_delete(const char *path) {
@@ -431,7 +431,7 @@ int vfs_delete(const char *path) {
             matches[i]->ops->unlink(matches[i]->fs_private, strip_mount(abs, matches[i])) == 0)
             return 0;
     }
-    return -1;
+    return -ENOENT;
 }
 
 int vfs_stat(const char *path, int *type, size_t *size) {
@@ -444,7 +444,7 @@ int vfs_stat(const char *path, int *type, size_t *size) {
             matches[i]->ops->stat(matches[i]->fs_private, strip_mount(abs, matches[i]), type, size) == 0)
             return 0;
     }
-    return -1;
+    return -ENOENT;
 }
 
 /* ===== Directory listing - merge entries from all matching mounts ===== */
@@ -465,7 +465,7 @@ int vfs_list(const char *path, vfs_list_cb cb) {
     resolve_abs(path, abs, sizeof(abs));
     struct vfs_mount *matches[4];
     int nmounts = find_mounts(abs, matches, 4);
-    if (nmounts == 0) return -1;
+    if (nmounts == 0) return -ENOENT;
 
     int count = 0;
     /* Collect names to avoid duplicates */
@@ -521,7 +521,7 @@ int vfs_list_buf(const char *path, char *buf, int bufsize) {
     resolve_abs(path, abs, sizeof(abs));
     struct vfs_mount *matches[4];
     int nmounts = find_mounts(abs, matches, 4);
-    if (nmounts == 0) return -1;
+    if (nmounts == 0) return -ENOENT;
 
     int off = 0;
     int count = 0;
@@ -555,7 +555,7 @@ int vfs_readdir(const char *abs_path, int index, struct dirent *out) {
     resolve_abs(abs_path, abs, sizeof(abs));
     struct vfs_mount *matches[4];
     int nmounts = find_mounts(abs, matches, 4);
-    if (nmounts == 0) return -1;
+    if (nmounts == 0) return -ENOENT;
 
     /* Iterate through all mounts, merging entries, skip duplicates */
     char seen[1024];
@@ -601,13 +601,13 @@ int vfs_chdir(const char *path) {
     resolve_abs(path, abs, sizeof(abs));
 
     struct vfs_mount *m = find_mount(abs);
-    if (!m) return -1;
+    if (!m) return -ENOENT;
     int type;
-    if (m->ops->stat(m->fs_private, strip_mount(abs, m), &type, NULL) < 0) return -1;
-    if (type != VFS_TYPE_DIR) return -1;
+    if (m->ops->stat(m->fs_private, strip_mount(abs, m), &type, NULL) < 0) return -ENOENT;
+    if (type != VFS_TYPE_DIR) return -ENOTDIR;
 
     struct task *t = task_current();
-    if (!t) return -1;
+    if (!t) return -EINVAL;
     int i = 0;
     while (abs[i] && i < 127) { t->cwd[i] = abs[i]; i++; }
     t->cwd[i] = '\0';

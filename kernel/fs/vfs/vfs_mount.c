@@ -16,14 +16,14 @@ int vfs_mount(const char *device, const char *path) {
     for (int i = 0; i < VFS_MAX_MOUNTS; i++) {
         if (mounts[i].used && strcmp(mounts[i].path, abs) == 0 &&
             strcmp(mounts[i].device, device) == 0)
-            return -1;
+            return -EEXIST;
     }
 
     const char *dev_name = device;
     if (strncmp(dev_name, "/dev/", 5) == 0) dev_name += 5;
 
     struct block_device *bd = block_device_find(dev_name);
-    if (!bd) return -1;
+    if (!bd) return -ENODEV;
 
     /* Try each registered filesystem type (skip ramfs for block devices) */
     for (int i = 0; i < MAX_FS_TYPES; i++) {
@@ -48,11 +48,11 @@ int vfs_mount(const char *device, const char *path) {
                     return 0;
                 }
             }
-            return -1;
+            return -ENOSPC;
         }
     }
 
-    return -1;
+    return -ENODEV;
 }
 
 int vfs_umount(const char *path) {
@@ -69,7 +69,7 @@ int vfs_umount(const char *path) {
             return 0;
         }
     }
-    return -1;
+    return -ENOENT;
 }
 
 int vfs_mount_count(void) {

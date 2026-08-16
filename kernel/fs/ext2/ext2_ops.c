@@ -35,7 +35,7 @@ int ext2_resolve_path(const char *path, uint32_t *out_ino) {
         }
 
         uint32_t next;
-        if (ext2_lookup(cur, name, &next) != 0) return -1;
+        if (ext2_lookup(cur, name, &next) != 0) return -ENOENT;
         cur = next;
     }
     *out_ino = cur;
@@ -51,19 +51,19 @@ int ext2_split_path(const char *path, char *parent, char *fname) {
 
     if (slash) {
         int plen = slash - path;
-        if (plen >= 255) return -1;
+        if (plen >= 255) return -ENOENT;
         memcpy(parent, path, plen);
         parent[plen] = '\0';
         if (parent[plen - 1] == '/' && plen > 1) parent[plen - 1] = '\0';
         if (parent[0] == '\0') { parent[0] = '/'; parent[1] = '\0'; }
 
         int flen = strlen(slash + 1);
-        if (flen >= 255) return -1;
+        if (flen >= 255) return -ENOENT;
         memcpy(fname, slash + 1, flen + 1);
     } else {
         parent[0] = '/'; parent[1] = '\0';
         int flen = strlen(name_start);
-        if (flen >= 255) return -1;
+        if (flen >= 255) return -ENOENT;
         memcpy(fname, name_start, flen + 1);
     }
     return 0;
@@ -75,7 +75,7 @@ static int ext2_fs_mount(struct block_device *device, void **fs_private) {
     int ret = ext2_do_mount(device);
     if (ret != 0) return ret;
     struct ext2_mount_ctx *ctx = kmalloc(sizeof(struct ext2_mount_ctx));
-    if (!ctx) { ext2_umount(); return -1; }
+    if (!ctx) { ext2_umount(); return -ENOENT; }
     ext2_save_ctx(ctx);
     *fs_private = ctx;
     return 0;
@@ -87,18 +87,18 @@ static int ext2_fs_open(void *fs_private, const char *path, int flags, struct fi
     if (ext2_resolve_path(path, &ino) < 0) {
         if (flags & O_CREAT) {
             char parent[256], fname[256];
-            if (ext2_split_path(path, parent, fname) < 0) return -1;
+            if (ext2_split_path(path, parent, fname) < 0) return -ENOENT;
             uint32_t parent_ino;
-            if (ext2_resolve_path(parent, &parent_ino) < 0) return -1;
-            if (ext2_create_file(parent_ino, fname, 0644) < 0) return -1;
-            if (ext2_resolve_path(path, &ino) < 0) return -1;
+            if (ext2_resolve_path(parent, &parent_ino) < 0) return -ENOENT;
+            if (ext2_create_file(parent_ino, fname, 0644) < 0) return -ENOENT;
+            if (ext2_resolve_path(path, &ino) < 0) return -ENOENT;
         } else {
-            return -1;
+            return -ENOENT;
         }
     }
 
     struct ext2_inode inode;
-    if (ext2_read_inode(ino, &inode) < 0) return -1;
+    if (ext2_read_inode(ino, &inode) < 0) return -ENOENT;
 
     if ((flags & O_TRUNC) && (inode.i_mode & 0xF000) == EXT2_S_IFREG) {
         inode.i_size = 0;
@@ -118,9 +118,9 @@ static int ext2_fs_open(void *fs_private, const char *path, int flags, struct fi
 static int ext2_fs_stat(void *fs_private, const char *path, int *type, size_t *size) {
     ext2_restore_ctx(fs_private);
     uint32_t ino;
-    if (ext2_resolve_path(path, &ino) < 0) return -1;
+    if (ext2_resolve_path(path, &ino) < 0) return -ENOENT;
     struct ext2_inode inode;
-    if (ext2_read_inode(ino, &inode) < 0) return -1;
+    if (ext2_read_inode(ino, &inode) < 0) return -ENOENT;
     int t = VFS_TYPE_FILE;
     if ((inode.i_mode & 0xF000) == EXT2_S_IFDIR) t = VFS_TYPE_DIR;
     if (type) *type = t;
@@ -131,34 +131,34 @@ static int ext2_fs_stat(void *fs_private, const char *path, int *type, size_t *s
 static int ext2_fs_create(void *fs_private, const char *path) {
     ext2_restore_ctx(fs_private);
     char parent[256], fname[256];
-    if (ext2_split_path(path, parent, fname) < 0) return -1;
+    if (ext2_split_path(path, parent, fname) < 0) return -ENOENT;
     uint32_t parent_ino;
-    if (ext2_resolve_path(parent, &parent_ino) < 0) return -1;
+    if (ext2_resolve_path(parent, &parent_ino) < 0) return -ENOENT;
     return ext2_create_file(parent_ino, fname, 0644);
 }
 
 static int ext2_fs_mkdir(void *fs_private, const char *path) {
     ext2_restore_ctx(fs_private);
     char parent[256], fname[256];
-    if (ext2_split_path(path, parent, fname) < 0) return -1;
+    if (ext2_split_path(path, parent, fname) < 0) return -ENOENT;
     uint32_t parent_ino;
-    if (ext2_resolve_path(parent, &parent_ino) < 0) return -1;
+    if (ext2_resolve_path(parent, &parent_ino) < 0) return -ENOENT;
     return ext2_mkdir(parent_ino, fname);
 }
 
 static int ext2_fs_unlink(void *fs_private, const char *path) {
     ext2_restore_ctx(fs_private);
     char parent[256], fname[256];
-    if (ext2_split_path(path, parent, fname) < 0) return -1;
+    if (ext2_split_path(path, parent, fname) < 0) return -ENOENT;
     uint32_t parent_ino;
-    if (ext2_resolve_path(parent, &parent_ino) < 0) return -1;
+    if (ext2_resolve_path(parent, &parent_ino) < 0) return -ENOENT;
     return ext2_unlink(parent_ino, fname);
 }
 
 static int ext2_fs_read_at(void *fs_private, const char *path, uint64_t offset, void *buffer, size_t size) {
     ext2_restore_ctx(fs_private);
     uint32_t ino;
-    if (ext2_resolve_path(path, &ino) < 0) return -1;
+    if (ext2_resolve_path(path, &ino) < 0) return -ENOENT;
     return ext2_read_at(ino, (size_t)offset, buffer, size);
 }
 
@@ -167,11 +167,11 @@ static int ext2_fs_write_at(void *fs_private, const char *path, uint64_t offset,
     uint32_t ino;
     if (ext2_resolve_path(path, &ino) < 0) {
         char parent[256], fname[256];
-        if (ext2_split_path(path, parent, fname) < 0) return -1;
+        if (ext2_split_path(path, parent, fname) < 0) return -ENOENT;
         uint32_t parent_ino;
-        if (ext2_resolve_path(parent, &parent_ino) < 0) return -1;
-        if (ext2_create_file(parent_ino, fname, 0644) < 0) return -1;
-        if (ext2_resolve_path(path, &ino) < 0) return -1;
+        if (ext2_resolve_path(parent, &parent_ino) < 0) return -ENOENT;
+        if (ext2_create_file(parent_ino, fname, 0644) < 0) return -ENOENT;
+        if (ext2_resolve_path(path, &ino) < 0) return -ENOENT;
     }
     return ext2_write_at(ino, (size_t)offset, buffer, size);
 }
@@ -179,9 +179,9 @@ static int ext2_fs_write_at(void *fs_private, const char *path, uint64_t offset,
 static int ext2_fs_truncate(void *fs_private, const char *path) {
     ext2_restore_ctx(fs_private);
     uint32_t ino;
-    if (ext2_resolve_path(path, &ino) < 0) return -1;
+    if (ext2_resolve_path(path, &ino) < 0) return -ENOENT;
     struct ext2_inode inode;
-    if (ext2_read_inode(ino, &inode) < 0) return -1;
+    if (ext2_read_inode(ino, &inode) < 0) return -ENOENT;
     inode.i_size = 0;
     inode.i_blocks = 0;
     return ext2_write_inode(ino, &inode);
@@ -215,10 +215,10 @@ static void ext2_readdir_pick(const char *name, uint32_t ino, uint8_t type, void
 static int ext2_fs_readdir(void *fs_private, const char *path, uint64_t index, struct dirent *out) {
     ext2_restore_ctx(fs_private);
     uint32_t ino;
-    if (ext2_resolve_path(path, &ino) < 0) return -1;
+    if (ext2_resolve_path(path, &ino) < 0) return -ENOENT;
     struct ext2_inode inode;
-    if (ext2_read_inode(ino, &inode) < 0) return -1;
-    if ((inode.i_mode & 0xF000) != EXT2_S_IFDIR) return -1;
+    if (ext2_read_inode(ino, &inode) < 0) return -ENOENT;
+    if ((inode.i_mode & 0xF000) != EXT2_S_IFDIR) return -ENOENT;
 
     struct ext2_readdir_ctx ctx;
     ctx.target = index;

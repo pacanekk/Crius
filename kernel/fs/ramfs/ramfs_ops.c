@@ -9,7 +9,7 @@
 static int ramfs_file_read(struct file *f, char *buf, int count) {
     int idx = (int)(intptr_t)f->priv;
     struct ramfs_inode *ino = ramfs_get_inode(idx);
-    if (!ino) return -1;
+    if (!ino) return -ENOENT;
     if (f->offset >= ino->size) return 0;
     int avail = (int)(ino->size - f->offset);
     if (avail > count) avail = count;
@@ -23,7 +23,7 @@ static int ramfs_file_write(struct file *f, const char *buf, int count) {
     size_t write_offset = f->offset;
     if (f->flags & O_APPEND) {
         struct ramfs_inode *ino = ramfs_get_inode(idx);
-        if (!ino) return -1;
+        if (!ino) return -ENOENT;
         write_offset = ino->size;
     }
     int ret = ramfs_write_at(idx, write_offset, buf, count);
@@ -34,7 +34,7 @@ static int ramfs_file_write(struct file *f, const char *buf, int count) {
 static int ramfs_dev_read(struct file *f, char *buf, int count) {
     int idx = (int)(intptr_t)f->priv;
     struct ramfs_inode *ino = ramfs_get_inode(idx);
-    if (!ino || !ino->dev_read) return -1;
+    if (!ino || !ino->dev_read) return -ENOENT;
     if (!ino->stream && f->offset > 0) return 0;
     int n = ino->dev_read(buf, count);
     if (n > 0) f->offset += n;
@@ -44,14 +44,14 @@ static int ramfs_dev_read(struct file *f, char *buf, int count) {
 static int ramfs_dev_write(struct file *f, const char *buf, int count) {
     int idx = (int)(intptr_t)f->priv;
     struct ramfs_inode *ino = ramfs_get_inode(idx);
-    if (!ino || !ino->dev_write) return -1;
+    if (!ino || !ino->dev_write) return -ENOENT;
     return ino->dev_write(buf, count);
 }
 
 static int ramfs_dev_ioctl(struct file *f, unsigned long req, void *arg) {
     int idx = (int)(intptr_t)f->priv;
     struct ramfs_inode *ino = ramfs_get_inode(idx);
-    if (!ino || !ino->dev_ioctl) return -1;
+    if (!ino || !ino->dev_ioctl) return -ENOENT;
     return ino->dev_ioctl(req, arg);
 }
 
@@ -93,15 +93,15 @@ static int ramfs_fs_open(void *fs_private, const char *path, int flags, struct f
     int idx;
     if (ramfs_resolve(path, &idx) < 0) {
         if (flags & O_CREAT) {
-            if (ramfs_create(path) < 0) return -1;
-            if (ramfs_resolve(path, &idx) < 0) return -1;
+            if (ramfs_create(path) < 0) return -ENOENT;
+            if (ramfs_resolve(path, &idx) < 0) return -ENOENT;
         } else {
-            return -1;
+            return -ENOENT;
         }
     }
 
     struct ramfs_inode *ino = ramfs_get_inode(idx);
-    if (!ino) return -1;
+    if (!ino) return -ENOENT;
 
     if ((flags & O_TRUNC) && ino->type == T_FILE) {
         ino->size = 0;
@@ -121,9 +121,9 @@ static int ramfs_fs_open(void *fs_private, const char *path, int flags, struct f
 static int ramfs_fs_stat(void *fs_private, const char *path, int *type, size_t *size) {
     (void)fs_private;
     int idx;
-    if (ramfs_resolve(path, &idx) < 0) return -1;
+    if (ramfs_resolve(path, &idx) < 0) return -ENOENT;
     struct ramfs_inode *ino = ramfs_get_inode(idx);
-    if (!ino) return -1;
+    if (!ino) return -ENOENT;
     if (type) *type = ino->type;
     if (size) *size = ino->size;
     return 0;
@@ -147,7 +147,7 @@ static int ramfs_fs_unlink(void *fs_private, const char *path) {
 static int ramfs_fs_read_at(void *fs_private, const char *path, uint64_t offset, void *buffer, size_t size) {
     (void)fs_private;
     int idx;
-    if (ramfs_resolve(path, &idx) < 0) return -1;
+    if (ramfs_resolve(path, &idx) < 0) return -ENOENT;
     return ramfs_read_at(idx, (size_t)offset, buffer, size);
 }
 
@@ -155,8 +155,8 @@ static int ramfs_fs_write_at(void *fs_private, const char *path, uint64_t offset
     (void)fs_private;
     int idx;
     if (ramfs_resolve(path, &idx) < 0) {
-        if (ramfs_create(path) < 0) return -1;
-        if (ramfs_resolve(path, &idx) < 0) return -1;
+        if (ramfs_create(path) < 0) return -ENOENT;
+        if (ramfs_resolve(path, &idx) < 0) return -ENOENT;
     }
     return ramfs_write_at(idx, (size_t)offset, buffer, size);
 }
@@ -164,9 +164,9 @@ static int ramfs_fs_write_at(void *fs_private, const char *path, uint64_t offset
 static int ramfs_fs_truncate(void *fs_private, const char *path) {
     (void)fs_private;
     int idx;
-    if (ramfs_resolve(path, &idx) < 0) return -1;
+    if (ramfs_resolve(path, &idx) < 0) return -ENOENT;
     struct ramfs_inode *ino = ramfs_get_inode(idx);
-    if (!ino) return -1;
+    if (!ino) return -ENOENT;
     ino->size = 0;
     return 0;
 }
@@ -174,13 +174,13 @@ static int ramfs_fs_truncate(void *fs_private, const char *path) {
 static int ramfs_fs_readdir(void *fs_private, const char *path, uint64_t index, struct dirent *out) {
     (void)fs_private;
     int idx;
-    if (ramfs_resolve(path, &idx) < 0) return -1;
+    if (ramfs_resolve(path, &idx) < 0) return -ENOENT;
     struct ramfs_inode *dir = ramfs_get_inode(idx);
-    if (!dir || dir->type != T_DIR) return -1;
+    if (!dir || dir->type != T_DIR) return -ENOENT;
     if ((int)index >= dir->entry_count) return 0;
     int child_idx = dir->entries[index];
     struct ramfs_inode *child = ramfs_get_inode(child_idx);
-    if (!child) return -1;
+    if (!child) return -ENOENT;
     out->inode = (uint32_t)child_idx;
     out->type = (uint8_t)child->type;
     int i = 0;

@@ -12,22 +12,22 @@ static int alloc_inode(void) {
         if (!inodes[i].used)
             return i;
     }
-    return -1;
+    return -ENOSPC;
 }
 
 static int dir_find(int dir, const char *name) {
-    if (inodes[dir].type != T_DIR) return -1;
+    if (inodes[dir].type != T_DIR) return -ENOTDIR;
     for (int i = 0; i < inodes[dir].entry_count; i++) {
         int idx = inodes[dir].entries[i];
         if (idx < 0 || !inodes[idx].used) continue;
         if (strcmp(inodes[idx].name, name) == 0)
             return idx;
     }
-    return -1;
+    return -ENOENT;
 }
 
 static int dir_add(int dir, int idx) {
-    if (inodes[dir].entry_count >= MAX_DIR_ENT) return -1;
+    if (inodes[dir].entry_count >= MAX_DIR_ENT) return -ENOSPC;
     for (int i = 0; i < inodes[dir].entry_count; i++) {
         if (inodes[dir].entries[i] == idx) return 0;
     }
@@ -42,7 +42,7 @@ static int dir_remove(int dir, int idx) {
             return 0;
         }
     }
-    return -1;
+    return -ENOENT;
 }
 
 static int resolve_path(const char *path, int base) {
@@ -65,7 +65,7 @@ static int resolve_path(const char *path, int base) {
         for (int j = 0; j < len; j++) name[j] = path[start + j];
         name[len] = '\0';
         cur = dir_find(cur, name);
-        if (cur < 0) return -1;
+        if (cur < 0) return cur;
     }
     return cur;
 }
@@ -87,7 +87,7 @@ void ramfs_init(void) {
 
 int ramfs_resolve(const char *path, int *out_inode) {
     int idx = resolve_path(path, cwd_inode);
-    if (idx < 0) return -1;
+    if (idx < 0) return idx;
     if (out_inode) *out_inode = idx;
     return 0;
 }
@@ -103,17 +103,17 @@ int ramfs_mkdir(const char *path) {
         if (plen == 0) { parent_path[0] = '/'; parent_path[1] = '\0'; }
         else { for (int i = 0; i < plen; i++) parent_path[i] = path[i]; parent_path[plen] = '\0'; }
         parent = resolve_path(parent_path, cwd_inode);
-        if (parent < 0) return -1;
-        if (inodes[parent].type != T_DIR) return -1;
+        if (parent < 0) return parent;
+        if (inodes[parent].type != T_DIR) return -ENOTDIR;
         name = path + slash + 1;
     } else {
         parent = cwd_inode;
         name = path;
     }
-    if (!name[0]) return -1;
-    if (dir_find(parent, name) >= 0) return -1;
+    if (!name[0]) return -ENOENT;
+    if (dir_find(parent, name) >= 0) return -EEXIST;
     int idx = alloc_inode();
-    if (idx < 0) return -1;
+    if (idx < 0) return -ENOSPC;
     inodes[idx].used = 1;
     inodes[idx].type = T_DIR;
     inodes[idx].parent = parent;
@@ -122,7 +122,7 @@ int ramfs_mkdir(const char *path) {
     int j;
     for (j = 0; name[j] && j < MAX_NAME - 1; j++) inodes[idx].name[j] = name[j];
     inodes[idx].name[j] = '\0';
-    if (dir_add(parent, idx) < 0) { inodes[idx].used = 0; return -1; }
+    if (dir_add(parent, idx) < 0) { inodes[idx].used = 0; return -ENOSPC; }
     return 0;
 }
 
@@ -137,17 +137,17 @@ static int create_entry(const char *path, int type, dev_read_fn rfn, dev_write_f
         if (plen == 0) { parent_path[0] = '/'; parent_path[1] = '\0'; }
         else { for (int i = 0; i < plen; i++) parent_path[i] = path[i]; parent_path[plen] = '\0'; }
         parent = resolve_path(parent_path, cwd_inode);
-        if (parent < 0) return -1;
-        if (inodes[parent].type != T_DIR) return -1;
+        if (parent < 0) return parent;
+        if (inodes[parent].type != T_DIR) return -ENOTDIR;
         name = path + slash + 1;
     } else {
         parent = cwd_inode;
         name = path;
     }
-    if (!name[0]) return -1;
-    if (dir_find(parent, name) >= 0) return -1;
+    if (!name[0]) return -ENOENT;
+    if (dir_find(parent, name) >= 0) return -EEXIST;
     int idx = alloc_inode();
-    if (idx < 0) return -1;
+    if (idx < 0) return -ENOSPC;
     inodes[idx].used = 1;
     inodes[idx].type = type;
     inodes[idx].parent = parent;
@@ -160,7 +160,7 @@ static int create_entry(const char *path, int type, dev_read_fn rfn, dev_write_f
     int j;
     for (j = 0; name[j] && j < MAX_NAME - 1; j++) inodes[idx].name[j] = name[j];
     inodes[idx].name[j] = '\0';
-    if (dir_add(parent, idx) < 0) { inodes[idx].used = 0; return -1; }
+    if (dir_add(parent, idx) < 0) { inodes[idx].used = 0; return -ENOSPC; }
     return 0;
 }
 
@@ -189,15 +189,15 @@ int ramfs_create_dev_stream(const char *path, dev_read_fn rfn, dev_write_fn wfn)
 int ramfs_write(const char *path, const char *data, size_t len) {
     int idx = resolve_path(path, cwd_inode);
     if (idx < 0) {
-        if (ramfs_create(path) < 0) return -1;
+        if (ramfs_create(path) < 0) return -ENOENT;
         idx = resolve_path(path, cwd_inode);
-        if (idx < 0) return -1;
+        if (idx < 0) return -ENOENT;
     }
     if (inodes[idx].type == T_DEV) {
         if (inodes[idx].dev_write) return inodes[idx].dev_write(data, len);
-        return -1;
+        return -EACCES;
     }
-    if (inodes[idx].type != T_FILE) return -1;
+    if (inodes[idx].type != T_FILE) return -ENOENT;
     if (len > MAX_FILESIZE) len = MAX_FILESIZE;
     for (size_t i = 0; i < len; i++) inodes[idx].data[i] = data[i];
     inodes[idx].size = len;
@@ -205,8 +205,8 @@ int ramfs_write(const char *path, const char *data, size_t len) {
 }
 
 int ramfs_write_at(int idx, size_t offset, const char *data, size_t len) {
-    if (idx < 0 || idx >= MAX_INODES) return -1;
-    if (inodes[idx].type != T_FILE) return -1;
+    if (idx < 0 || idx >= MAX_INODES) return -EINVAL;
+    if (inodes[idx].type != T_FILE) return -EISDIR;
     if (offset + len > MAX_FILESIZE) len = MAX_FILESIZE - offset;
     for (size_t i = 0; i < len; i++)
         inodes[idx].data[offset + i] = data[i];
@@ -218,15 +218,15 @@ int ramfs_write_at(int idx, size_t offset, const char *data, size_t len) {
 int ramfs_append(const char *path, const char *data, size_t len) {
     int idx = resolve_path(path, cwd_inode);
     if (idx < 0) {
-        if (ramfs_create(path) < 0) return -1;
+        if (ramfs_create(path) < 0) return -ENOENT;
         idx = resolve_path(path, cwd_inode);
-        if (idx < 0) return -1;
+        if (idx < 0) return -ENOENT;
     }
     if (inodes[idx].type == T_DEV) {
         if (inodes[idx].dev_write) return inodes[idx].dev_write(data, len);
-        return -1;
+        return -EACCES;
     }
-    if (inodes[idx].type != T_FILE) return -1;
+    if (inodes[idx].type != T_FILE) return -ENOENT;
     if (inodes[idx].size > 0 && inodes[idx].data[inodes[idx].size - 1] != '\n') {
         if (inodes[idx].size < MAX_FILESIZE)
             inodes[idx].data[inodes[idx].size++] = '\n';
@@ -240,8 +240,8 @@ int ramfs_append(const char *path, const char *data, size_t len) {
 }
 
 int ramfs_read_at(int idx, size_t offset, char *buf, size_t count) {
-    if (idx < 0 || idx >= MAX_INODES) return -1;
-    if (inodes[idx].type != T_FILE) return -1;
+    if (idx < 0 || idx >= MAX_INODES) return -EINVAL;
+    if (inodes[idx].type != T_FILE) return -EISDIR;
     if (offset >= inodes[idx].size) return 0;
     size_t avail = inodes[idx].size - offset;
     if (count > avail) count = avail;
@@ -252,12 +252,12 @@ int ramfs_read_at(int idx, size_t offset, char *buf, size_t count) {
 
 int ramfs_read(const char *path, char *buf, size_t bufsize) {
     int idx = resolve_path(path, cwd_inode);
-    if (idx < 0) return -1;
+    if (idx < 0) return idx;
     if (inodes[idx].type == T_DEV) {
         if (inodes[idx].dev_read) return inodes[idx].dev_read(buf, bufsize);
-        return -1;
+        return -EACCES;
     }
-    if (inodes[idx].type != T_FILE) return -1;
+    if (inodes[idx].type != T_FILE) return -EISDIR;
     size_t to_copy = inodes[idx].size < bufsize ? inodes[idx].size : bufsize;
     for (size_t i = 0; i < to_copy; i++) buf[i] = inodes[idx].data[i];
     return (int)to_copy;
@@ -265,9 +265,9 @@ int ramfs_read(const char *path, char *buf, size_t bufsize) {
 
 int ramfs_delete(const char *path) {
     int idx = resolve_path(path, cwd_inode);
-    if (idx < 0) return -1;
-    if (idx == 0) return -1;
-    if (inodes[idx].type == T_DIR && inodes[idx].entry_count > 0) return -1;
+    if (idx < 0) return idx;
+    if (idx == 0) return -EBUSY;
+    if (inodes[idx].type == T_DIR && inodes[idx].entry_count > 0) return -ENOTEMPTY;
     dir_remove(inodes[idx].parent, idx);
     inodes[idx].used = 0;
     inodes[idx].size = 0;
@@ -280,8 +280,8 @@ int ramfs_delete(const char *path) {
 
 int ramfs_list_dir(const char *path, int *out_indices, int max) {
     int idx = resolve_path(path, cwd_inode);
-    if (idx < 0) return -1;
-    if (inodes[idx].type != T_DIR) return -1;
+    if (idx < 0) return idx;
+    if (inodes[idx].type != T_DIR) return -ENOTDIR;
     int count = inodes[idx].entry_count;
     if (count > max) count = max;
     for (int i = 0; i < count; i++)
@@ -291,7 +291,7 @@ int ramfs_list_dir(const char *path, int *out_indices, int max) {
 
 int ramfs_stat(const char *path, int *type, size_t *size) {
     int idx = resolve_path(path, cwd_inode);
-    if (idx < 0) return -1;
+    if (idx < 0) return idx;
     if (type) *type = inodes[idx].type;
     if (size) *size = inodes[idx].size;
     return 0;
@@ -299,8 +299,8 @@ int ramfs_stat(const char *path, int *type, size_t *size) {
 
 int ramfs_chdir(const char *path) {
     int idx = resolve_path(path, cwd_inode);
-    if (idx < 0) return -1;
-    if (inodes[idx].type != T_DIR) return -1;
+    if (idx < 0) return idx;
+    if (inodes[idx].type != T_DIR) return -ENOTDIR;
     cwd_inode = idx;
     return 0;
 }
