@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <crius/abi.h>
 #include "task.h"
 
 extern volatile uint64_t syscall_saved_rsp;
@@ -16,7 +17,7 @@ int task_create(const char *name, void (*entry)(void));
 int task_create_args(const char *name, void (*entry)(void *), void *arg);
 int task_create_current(const char *name);
 void task_exit_code(int code);
-int task_wait(int pid);
+int task_wait(int pid, int *status, int options);
 int task_kill(int id);
 void task_sleep(uint64_t ms);
 void task_set_priority(int id, int priority);

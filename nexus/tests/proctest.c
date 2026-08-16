@@ -46,7 +46,7 @@ void test_exit_code(void) {
     if (pid == 0) {
         exit(42);
     }
-    int code = wait(pid);
+    int status; waitpid(pid, &status, 0); int code = WEXITSTATUS(status);
     if (code == 42) ok("exit42"); else { fail("exit42"); prog_print_color("    got code=", 0x00FFFFFF, 0); puti(code); prog_newline(); }
 }
 
@@ -71,8 +71,8 @@ void test_concurrent(void) {
         }
         exit(0);
     }
-    wait(p1);
-    wait(p2);
+    waitpid(p1, NULL, 0);
+    waitpid(p2, NULL, 0);
     prog_newline();
     ok("both_ran");
 }
@@ -84,10 +84,10 @@ void test_fork_exec(void) {
     if (pid < 0) { fail("fork"); return; }
     if (pid == 0) {
         char *argv[] = { "echo", "exec_works", NULL };
-        exec("/bin/echo", 2, argv);
+        execv("/bin/echo", argv);
         exit(1);
     }
-    int code = wait(pid);
+    int status; waitpid(pid, &status, 0); int code = WEXITSTATUS(status);
     if (code == 0) ok("exec_echo"); else { fail("exec_echo"); prog_print_color("    code=", 0x00FFFFFF, 0); puti(code); prog_newline(); }
 }
 
@@ -101,8 +101,8 @@ void test_crash(void) {
         *p = 42;
         exit(0);
     }
-    int code = wait(pid);
-    if (code == -1) ok("segfault_killed"); else { fail("segfault_killed"); prog_print_color("    code=", 0x00FFFFFF, 0); puti(code); prog_newline(); }
+    int status; waitpid(pid, &status, 0); int code = WEXITSTATUS(status);
+    if (WIFSIGNALED(status) && WTERMSIG(status) == SIGSEGV) ok("segfault_killed"); else { fail("segfault_killed"); prog_print_color("    code=", 0x00FFFFFF, 0); puti(code); prog_newline(); }
 }
 
 /* Test 5: orphan survival */
@@ -120,7 +120,7 @@ void test_orphan(void) {
         }
         exit(0);
     }
-    wait(child);
+    waitpid(child, NULL, 0);
     sleep(10);
     ok("orphan_survived");
 }
@@ -133,13 +133,13 @@ void test_double_exec(void) {
     if (pid == 0) {
         /* First exec */
         char *argv1[] = { "echo", "first", NULL };
-        exec("/bin/echo", 2, argv1);
+        execv("/bin/echo", argv1);
         /* If exec fails, try second */
         char *argv2[] = { "echo", "second", NULL };
-        exec("/bin/echo", 2, argv2);
+        execv("/bin/echo", argv2);
         exit(1);
     }
-    int code = wait(pid);
+    int status; waitpid(pid, &status, 0); int code = WEXITSTATUS(status);
     if (code == 0) ok("double_exec"); else { fail("double_exec"); prog_print_color("    code=", 0x00FFFFFF, 0); puti(code); prog_newline(); }
 }
 
@@ -167,8 +167,8 @@ void test_kill_reparent(void) {
     int k = kill(child);
     if (k < 0) { fail("kill"); return; }
     /* Wait for the killed child */
-    int code = wait(child);
-    if (code == -1) ok("kill_exit_code"); else { fail("kill_exit_code"); prog_print_color("    code=", 0x00FFFFFF, 0); puti(code); prog_newline(); }
+    int status; waitpid(child, &status, 0); int code = WEXITSTATUS(status);
+    if (WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL) ok("kill_exit_code"); else { fail("kill_exit_code"); prog_print_color("    code=", 0x00FFFFFF, 0); puti(code); prog_newline(); }
     /* Grandchild should still be alive - wait for it via sleep */
     sleep(15);
     ok("gc_survived_kill");
@@ -184,8 +184,8 @@ void test_wait_any(void) {
     if (p2 < 0) { fail("fork2"); return; }
     if (p2 == 0) { exit(20); }
     /* wait(-1) should reap one of them */
-    int code1 = wait(-1);
-    int code2 = wait(-1);
+    int status1; waitpid(-1, &status1, 0); int code1 = WEXITSTATUS(status1);
+    int status2; waitpid(-1, &status2, 0); int code2 = WEXITSTATUS(status2);
     /* Both should be reaped, codes should be 10 or 20 */
     if ((code1 == 10 || code1 == 20) && (code2 == 10 || code2 == 20) && code1 != code2)
         ok("wait_any");
@@ -203,21 +203,21 @@ void test_pid_reuse(void) {
     pid_t p1 = fork();
     if (p1 < 0) { fail("fork1"); return; }
     if (p1 == 0) { exit(0); }
-    wait(p1);
+    waitpid(p1, NULL, 0);
 
     pid_t p2 = fork();
     if (p2 < 0) { fail("fork2"); return; }
     if (p2 == 0) { exit(0); }
     /* p2 should reuse p1's slot (same PID) */
     if (p2 == p1) {
-        wait(p2);
+        waitpid(p2, NULL, 0);
         ok("pid_reuse");
     } else {
         fail("pid_reuse");
         prog_print_color("    p1=", 0x00FFFFFF, 0); puti(p1);
         prog_print_color(" p2=", 0x00FFFFFF, 0); puti(p2);
         prog_newline();
-        wait(p2);
+        waitpid(p2, NULL, 0);
     }
 }
 
@@ -230,7 +230,7 @@ void test_stress_forks(void) {
         pid_t pid = fork();
         if (pid < 0) { failures++; continue; }
         if (pid == 0) { exit(i); }
-        int code = wait(pid);
+        int status; waitpid(pid, &status, 0); int code = WEXITSTATUS(status);
         if (code != i) failures++;
     }
     if (failures == 0) ok("stress_20"); else { fail("stress_20"); prog_print_color("    failures=", 0x00FFFFFF, 0); puti(failures); prog_newline(); }
@@ -249,7 +249,7 @@ void test_zombie_cleanup(void) {
     /* Wait for all */
     int reaped = 0;
     for (int i = 0; i < N; i++) {
-        int code = wait(pids[i]);
+        int status; waitpid(pids[i], &status, 0); int code = WEXITSTATUS(status);
         if (code == 0) reaped++;
     }
     if (reaped == N) ok("zombie_cleanup"); else { fail("zombie_cleanup"); prog_print_color("    reaped=", 0x00FFFFFF, 0); puti(reaped); prog_print_color("/", 0x00FFFFFF, 0); puti(N); prog_newline(); }
@@ -266,7 +266,7 @@ void test_fd_inherit(void) {
         write(1, "fd_inherit_ok\n", 14);
         exit(0);
     }
-    int code = wait(pid);
+    int status; waitpid(pid, &status, 0); int code = WEXITSTATUS(status);
     if (code == 0) ok("fd_inherit"); else { fail("fd_inherit"); prog_print_color("    code=", 0x00FFFFFF, 0); puti(code); prog_newline(); }
 }
 
@@ -285,8 +285,8 @@ void test_fd_kill_cleanup(void) {
     sleep(2);
     int k = kill(pid);
     if (k < 0) { fail("kill"); return; }
-    int code = wait(pid);
-    if (code == -1) ok("fd_kill_cleanup"); else { fail("fd_kill_cleanup"); prog_print_color("    code=", 0x00FFFFFF, 0); puti(code); prog_newline(); }
+    int status; waitpid(pid, &status, 0); int code = WEXITSTATUS(status);
+    if (WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL) ok("fd_kill_cleanup"); else { fail("fd_kill_cleanup"); prog_print_color("    code=", 0x00FFFFFF, 0); puti(code); prog_newline(); }
 }
 
 /* Test 14: FD persistence after exec - fds should survive exec */
@@ -297,10 +297,10 @@ void test_fd_exec_persist(void) {
     if (pid == 0) {
         /* Child execs echo - stdout (fd 1) should still work after exec */
         char *argv[] = { "echo", "exec_fd_works", NULL };
-        exec("/bin/echo", 2, argv);
+        execv("/bin/echo", argv);
         exit(1);
     }
-    int code = wait(pid);
+    int status; waitpid(pid, &status, 0); int code = WEXITSTATUS(status);
     if (code == 0) ok("fd_exec_persist"); else { fail("fd_exec_persist"); prog_print_color("    code=", 0x00FFFFFF, 0); puti(code); prog_newline(); }
 }
 
@@ -312,7 +312,7 @@ void test_zombie_delayed_wait(void) {
     if (pid == 0) { exit(77); }
     /* Do some work before waiting */
     sleep(5);
-    int code = wait(pid);
+    int status; waitpid(pid, &status, 0); int code = WEXITSTATUS(status);
     if (code == 77) ok("zombie_delayed_wait"); else { fail("zombie_delayed_wait"); prog_print_color("    code=", 0x00FFFFFF, 0); puti(code); prog_newline(); }
 }
 
@@ -323,11 +323,11 @@ void test_exec_failure(void) {
     if (pid < 0) { fail("fork"); return; }
     if (pid == 0) {
         char *argv[] = { "nonexistent", NULL };
-        exec("/bin/nonexistent_program", 1, argv);
+        execv("/bin/nonexistent_program", argv);
         /* If exec fails, we should continue and exit with a specific code */
         exit(99);
     }
-    int code = wait(pid);
+    int status; waitpid(pid, &status, 0); int code = WEXITSTATUS(status);
     if (code == 99) ok("exec_failure"); else { fail("exec_failure"); prog_print_color("    code=", 0x00FFFFFF, 0); puti(code); prog_newline(); }
 }
 
@@ -343,7 +343,7 @@ void test_sibling_consistency(void) {
     }
     /* Wait for all children and verify exit codes */
     for (int i = 0; i < 5; i++) {
-        int code = wait(pids[i]);
+        int status; waitpid(pids[i], &status, 0); int code = WEXITSTATUS(status);
         if (code == i) ok_count++;
     }
     if (ok_count == 5) ok("sibling_consistency"); else { fail("sibling_consistency"); prog_print_color("    ok=", 0x00FFFFFF, 0); puti(ok_count); prog_print_color("/5\n", 0x00FFFFFF, 0); }

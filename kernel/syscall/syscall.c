@@ -42,25 +42,46 @@ uint64_t syscall_handler(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3, uin
     }
     case SYS_WAIT: {
         int pid = (int)a1;
-        return (uint64_t)task_wait(pid);
+        int options = (int)a3;
+        int status;
+        int ret = task_wait(pid, &status, options);
+        if (ret < 0) return (uint64_t)ret;
+        if (a2) {
+            if (!validate_user_ptr_writable((void *)a2, sizeof(int)))
+                return (uint64_t)-EFAULT;
+            int *ustatus = (int *)a2;
+            *ustatus = status;
+        }
+        return (uint64_t)ret;
     }
     case SYS_EXEC: {
         const char *path = (const char *)a1;
-        int argc = (int)a2;
-        char **argv = (char **)a3;
+        char **argv = (char **)a2;
+        char **envp = (char **)a3;
 
-        if (!validate_user_string(path, 255)) {
-            return (uint64_t)-1;
+        if (!validate_user_string(path, 255)) return (uint64_t)-EFAULT;
+
+        if (!argv) return (uint64_t)-EFAULT;
+        int i;
+        for (i = 0; i < MAX_ARGS; i++) {
+            if (!validate_user_ptr((const void *)(argv + i), sizeof(char *)))
+                return (uint64_t)-EFAULT;
+            if (!argv[i]) break;
+            if (!validate_user_string(argv[i], MAX_ARG_LEN))
+                return (uint64_t)-EFAULT;
         }
-        if (argc < 0 || argc > MAX_ARGS) return (uint64_t)-1;
-        if (argc > 0) {
-            if (!validate_user_ptr(argv, (size_t)argc * sizeof(char *))) return (uint64_t)-1;
-            for (int i = 0; i < argc && i < MAX_ARGS; i++) {
-                if (argv[i] && !validate_user_string(argv[i], MAX_ARG_LEN)) return (uint64_t)-1;
-            }
+        if (i == MAX_ARGS) {
+            if (!validate_user_ptr((const void *)(argv + MAX_ARGS), sizeof(char *)))
+                return (uint64_t)-EFAULT;
+            if (argv[MAX_ARGS]) return (uint64_t)-E2BIG;
         }
 
-        return (uint64_t)do_exec(path, argc, argv);
+        if (envp) {
+            if (!validate_user_ptr((const void *)envp, sizeof(char *)))
+                return (uint64_t)-EFAULT;
+        }
+
+        return (uint64_t)do_exec(path, argv, envp);
     }
     case SYS_FORK: {
         uint64_t fork_saved_rsp = syscall_saved_rsp;

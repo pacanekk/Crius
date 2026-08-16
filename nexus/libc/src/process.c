@@ -18,14 +18,22 @@ pid_t fork(void) {
     return (pid_t)ret;
 }
 
-int exec(const char *path, int argc, char **argv) {
-    long ret = _syscall3(SYS_EXEC, (long)path, (long)argc, (long)argv);
+int execve(const char *path, char *const argv[], char *const envp[]) {
+    long ret = _syscall3(SYS_EXEC, (long)path, (long)argv, (long)envp);
     if (ret < 0) { errno = (int)(-ret); return -1; }
     return (int)ret;
 }
 
-pid_t wait(pid_t pid) {
-    long ret = _syscall1(SYS_WAIT, (long)pid);
+int execv(const char *path, char *const argv[]) {
+    return execve(path, argv, NULL);
+}
+
+pid_t wait(int *status) {
+    return waitpid(-1, status, 0);
+}
+
+pid_t waitpid(pid_t pid, int *status, int options) {
+    long ret = _syscall3(SYS_WAIT, (long)pid, (long)status, (long)options);
     if (ret < 0) { errno = (int)(-ret); return -1; }
     return (pid_t)ret;
 }

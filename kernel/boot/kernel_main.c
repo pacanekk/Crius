@@ -110,7 +110,7 @@ static void kernel_process_tests(void) {
     if (tasks[pid].state == TASK_ZOMBIE) ktest_ok("kill_zombie");
     else ktest_fail_msg("kill_zombie", "not ZOMBIE");
 
-    if (tasks[pid].exit_code == -1) ktest_ok("kill_exit_code");
+    if (tasks[pid].exit_code == -SIGKILL) ktest_ok("kill_exit_code");
     else ktest_fail_msg("kill_exit_code", "not -1");
 
     /* gpid should now be reparented to idle (PID 0) */
@@ -128,9 +128,11 @@ static void kernel_process_tests(void) {
     /* Test 6: task_wait reaps zombie and cleans up */
     /* idle waits for pid (zombie) */
     current_task = 0;
-    int code = task_wait(pid);
-    if (code == -1) ktest_ok("wait_kill_code");
-    else ktest_fail_msg("wait_kill_code", "expected -1");
+    int status;
+    int code = task_wait(pid, &status, 0);
+    (void)code;
+    if (WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL) ktest_ok("wait_kill_code");
+    else ktest_fail_msg("wait_kill_code", "expected SIGKILL");
 
     if (tasks[pid].state == TASK_UNUSED) ktest_ok("wait_reaped");
     else ktest_fail_msg("wait_reaped", "not UNUSED");
@@ -171,8 +173,11 @@ static void kernel_process_tests(void) {
         tasks[c2].exit_code = 22;
 
         current_task = 0;
-        int r1 = task_wait(-1);
-        int r2 = task_wait(-1);
+        int s1, s2;
+        task_wait(-1, &s1, 0);
+        task_wait(-1, &s2, 0);
+        int r1 = WEXITSTATUS(s1);
+        int r2 = WEXITSTATUS(s2);
         if ((r1 == 11 || r1 == 22) && (r2 == 11 || r2 == 22) && r1 != r2)
             ktest_ok("wait_any");
         else
@@ -185,7 +190,7 @@ static void kernel_process_tests(void) {
     if (tasks[gpid].state != TASK_UNUSED) {
         tasks[gpid].state = TASK_ZOMBIE;
         current_task = 0;
-        task_wait(gpid);
+        task_wait(gpid, NULL, 0);
     }
 
     /* Test 9: FD cleanup after kill - verify fds are NULL after kill.
@@ -205,7 +210,7 @@ static void kernel_process_tests(void) {
             ktest_fail_msg("kill_clears_fds", "FDs not NULL after kill");
         /* Reap it */
         current_task = 0;
-        task_wait(fd_pid);
+        task_wait(fd_pid, NULL, 0);
     } else {
         ktest_fail_msg("kill_clears_fds", "create failed");
     }
@@ -224,7 +229,7 @@ static void kernel_process_tests(void) {
         else
             ktest_fail_msg("kill_clears_pending_kstack", "not NULL after kill");
         current_task = 0;
-        task_wait(pk_pid);
+        task_wait(pk_pid, NULL, 0);
     } else {
         ktest_fail_msg("kill_clears_pending_kstack", "create failed");
     }
@@ -249,7 +254,7 @@ static void kernel_process_tests(void) {
         /* Clean up */
         tasks[init_child].state = TASK_ZOMBIE;
         current_task = 0;
-        task_wait(init_child);
+        task_wait(init_child, NULL, 0);
         tasks[1].state = TASK_UNUSED;
         tasks[1].first_child = -1;
     } else {

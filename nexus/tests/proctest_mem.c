@@ -18,7 +18,7 @@ void test_mem_leak_fork(void) {
         pid_t pid = fork();
         if (pid < 0) { failures++; continue; }
         if (pid == 0) { exit(0); }
-        int code = wait(pid);
+        int status; waitpid(pid, &status, 0); int code = WEXITSTATUS(status);
         if (code != 0) failures++;
     }
 
@@ -50,10 +50,10 @@ void test_mem_leak_exec(void) {
         if (pid < 0) { failures++; continue; }
         if (pid == 0) {
             char *argv[] = { "echo", "x", NULL };
-            exec("/bin/echo", 2, argv);
+            execv("/bin/echo", argv);
             exit(1);
         }
-        int code = wait(pid);
+        int status; waitpid(pid, &status, 0); int code = WEXITSTATUS(status);
         if (code != 0) failures++;
     }
 
@@ -85,10 +85,10 @@ void test_mem_leak_failed_exec(void) {
         if (pid < 0) { failures++; continue; }
         if (pid == 0) {
             char *argv[] = { "noexist", NULL };
-            exec("/bin/nonexistent_program", 1, argv);
+            execv("/bin/nonexistent_program", argv);
             exit(99);
         }
-        int code = wait(pid);
+        int status; waitpid(pid, &status, 0); int code = WEXITSTATUS(status);
         if (code != 99) failures++;
     }
 
@@ -121,7 +121,7 @@ void test_mem_leak_mixed(void) {
             pid_t pid = fork();
             if (pid < 0) { failures++; continue; }
             if (pid == 0) { exit(0); }
-            wait(pid);
+            waitpid(pid, NULL, 0);
         }
         /* Cycle 1: fork -> exec -> exit -> wait */
         {
@@ -129,10 +129,10 @@ void test_mem_leak_mixed(void) {
             if (pid < 0) { failures++; continue; }
             if (pid == 0) {
                 char *argv[] = { "echo", "x", NULL };
-                exec("/bin/echo", 2, argv);
+                execv("/bin/echo", argv);
                 exit(1);
             }
-            wait(pid);
+            waitpid(pid, NULL, 0);
         }
         /* Cycle 2: fork -> failed exec -> exit -> wait */
         {
@@ -140,10 +140,10 @@ void test_mem_leak_mixed(void) {
             if (pid < 0) { failures++; continue; }
             if (pid == 0) {
                 char *argv[] = { "noexist", NULL };
-                exec("/bin/nonexistent", 1, argv);
+                execv("/bin/nonexistent", argv);
                 exit(99);
             }
-            wait(pid);
+            waitpid(pid, NULL, 0);
         }
     }
 

@@ -115,6 +115,28 @@ struct exec_ctx {
     char **argv;
 };
 
+/* ===== waitpid status values ===== */
+#define WNOHANG   1
+#define WUNTRACED 2
+
+#define WEXITSTATUS(s) (((s) >> 8) & 0xFF)
+#define WTERMSIG(s)    ((s) & 0x7F)
+#define WIFEXITED(s)   (WTERMSIG(s) == 0)
+#define WIFSIGNALED(s) (WTERMSIG(s) > 0 && WTERMSIG(s) != 0x7F)
+
+/* ===== minimal signal numbers ===== */
+#define SIGHUP  1
+#define SIGINT  2
+#define SIGQUIT 3
+#define SIGILL  4
+#define SIGTRAP 5
+#define SIGABRT 6
+#define SIGBUS  7
+#define SIGFPE  8
+#define SIGKILL 9
+#define SIGSEGV 11
+#define SIGTERM 15
+
 /* ===== Ioctl requests ===== */
 
 #define BLK_GET_INFO       1   /* arg = struct block_dev_info * */

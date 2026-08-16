@@ -308,11 +308,11 @@ void task_exit_code(int code) {
 }
 
 int task_kill(int id) {
-    if (id < 0 || id >= MAX_TASKS) return -1;
-    if (id == current_task) return -1;
-    if (id == 0) return -1;  /* cannot kill idle task */
+    if (id < 0 || id >= MAX_TASKS) return -ESRCH;
+    if (id == current_task) return -EINVAL;
+    if (id == 0) return -EPERM;  /* cannot kill idle task */
     if (tasks[id].state == TASK_UNUSED || tasks[id].state == TASK_ZOMBIE)
-        return -1;
+        return -ESRCH;
 
     task_reparent_children(id);
 
@@ -326,16 +326,15 @@ int task_kill(int id) {
     }
 
     tasks[id].state = TASK_ZOMBIE;
-    tasks[id].exit_code = -1;
+    tasks[id].exit_code = -SIGKILL;
     return 0;
 }
 
-int task_wait(int pid) {
+int task_wait(int pid, int *status, int options) {
     int parent = current_task;
-    if (parent < 0) return -1;
+    if (parent < 0) return -ECHILD;
 
     for (;;) {
-        /* Scan for a matching ZOMBIE child */
         int found = -1;
         for (int i = 0; i < MAX_TASKS; i++) {
             if (tasks[i].state != TASK_ZOMBIE) continue;
@@ -347,6 +346,13 @@ int task_wait(int pid) {
 
         if (found >= 0) {
             int code = tasks[found].exit_code;
+            int st = 0;
+            if (code < 0) {
+                st = -code; /* signal number */
+            } else {
+                st = (code & 0xFF) << 8;
+            }
+            if (status) *status = st;
             task_remove_child(parent, found);
             task_cleanup(&tasks[found]);
             tasks[found].state = TASK_UNUSED;
@@ -356,7 +362,7 @@ int task_wait(int pid) {
             tasks[found].next_sibling = -1;
             tasks[found].first_child = -1;
             tasks[found].pending_free_kstack = NULL;
-            return code;
+            return found;
         }
 
         /* Check that a matching child still exists */
@@ -370,7 +376,10 @@ int task_wait(int pid) {
             break;
         }
         if (!has_child)
-            return -1;
+            return -ECHILD;
+
+        if (options & WNOHANG)
+            return 0;
 
         /* Block until child exits. */
         tasks[parent].state = TASK_BLOCKED;

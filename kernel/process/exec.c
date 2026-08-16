@@ -25,9 +25,15 @@
 #define USER_STACK_PAGES 32
 #define ARG_PAGE_BASE    0x70000000UL
 
-int do_exec(const char *path, int argc, char **argv)
+int do_exec(const char *path, char **argv, char **envp)
 {
-    if (!path || argc < 0 || argc > MAX_ARGS)
+    (void)envp;
+    if (!path)
+        return -1;
+
+    int argc = 0;
+    while (argv && argv[argc] && argc < MAX_ARGS) argc++;
+    if (argc > MAX_ARGS)
         return -1;
 
     /* 1. Stat the file */

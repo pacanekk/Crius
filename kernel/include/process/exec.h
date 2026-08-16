@@ -9,6 +9,6 @@
  * the syscall frame is modified to jump to the new entry point).
  * Returns -1 on failure.
  */
-int do_exec(const char *path, int argc, char **argv);
+int do_exec(const char *path, char **argv, char **envp);
 
 #endif

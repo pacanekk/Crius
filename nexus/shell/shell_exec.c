@@ -64,11 +64,11 @@ void shell_exec(char *line) {
         return;
     }
     if (pid == 0) {
-        exec(argv[0], argc, argv);
+        execv(argv[0], argv);
         shell_write("Unknown command: ");
         shell_write(argv[0]);
         shell_putc('\n');
         exit(1);
     }
-    wait(pid);
+    waitpid(pid, NULL, 0);
 }

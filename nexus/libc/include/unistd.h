@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <errno.h>
 #include <sys/types.h>
+#include <crius/abi.h>
 
 struct mem_stats;
 
@@ -15,8 +16,10 @@ struct mem_stats;
 /* ===== Process ===== */
 void    exit(int code);
 pid_t   fork(void);
-int     exec(const char *path, int argc, char **argv);
-pid_t   wait(pid_t pid);
+int     execve(const char *path, char *const argv[], char *const envp[]);
+int     execv(const char *path, char *const argv[]);
+pid_t   wait(int *status);
+pid_t   waitpid(pid_t pid, int *status, int options);
 int     kill(pid_t pid);
 void    sleep(unsigned ticks);
 void    yield(void);

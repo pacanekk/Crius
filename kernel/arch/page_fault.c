@@ -62,7 +62,7 @@ void page_fault_handler(uint64_t error_code, uint64_t rip)
         serial_hex(error_code);
         serial_puts(")\n");
 
-        task_exit_code(-1);  /* signal-like exit code */
+        task_exit_code(-SIGSEGV);  /* signal-like exit code */
         /* task_exit_code never returns */
     }
 

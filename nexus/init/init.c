@@ -182,18 +182,18 @@ void userspace_init(void) {
         }
         if (pid == 0) {
             char *sargv[] = { "shell", NULL };
-            exec("/bin/shell", 1, sargv);
+            execv("/bin/shell", sargv);
             klog("init: failed to exec shell\n");
             exit(1);
         }
 
         /* Wait specifically for the shell to exit */
-        wait(pid);
+        waitpid(pid, NULL, 0);
         klog("init: shell exited, reaping orphans\n");
 
         /* Reap any orphaned children that were reparented to init.
-         * wait(-1) returns -1 when no more children exist. */
-        while (wait(-1) != -1)
+         * waitpid(-1) returns -1 when no more children exist. */
+        while (waitpid(-1, NULL, 0) > 0)
             ;
 
         klog("init: restarting shell\n");

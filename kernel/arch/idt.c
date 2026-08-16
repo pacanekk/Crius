@@ -61,7 +61,7 @@ void isr_handler(uint64_t vector, uint64_t error_code, uint64_t rip, uint64_t cs
             serial_puts("' rip=");
             serial_hex(rip);
             serial_puts(")\n");
-            task_exit_code(-1);
+            task_exit_code(-SIGSEGV);
         }
 
         /* Kernel exception - panic */
