@@ -61,7 +61,7 @@ const char *vfs_mount_point(int idx);
 const char *vfs_mount_device(int idx);
 
 int vfs_chdir(const char *path);
-void vfs_pwd(char *buf, int bufsize);
+int vfs_pwd(char *buf, int bufsize);
 void vfs_resolve_abs(const char *path, char *out, int outsize);
 
 /* Read one directory entry at given index. Returns 1 on success, 0 on EOF, -1 on error. */

@@ -172,9 +172,12 @@ int ext2_write_at(uint32_t ino, size_t offset, const void *buf, size_t len) {
         inode.i_size = (uint32_t)file_offset;
     uint32_t blocks_needed = (inode.i_size + block_size - 1) / block_size;
     inode.i_blocks = blocks_needed * (block_size / 512);
-    int ret = ext2_write_inode(ino, &inode);
+    if (ext2_write_inode(ino, &inode) < 0) {
+        kfree(block_buf);
+        return -EIO;
+    }
     kfree(block_buf);
-    return ret;
+    return (int)pos;
 }
 
 /* ===== Read at offset ===== */

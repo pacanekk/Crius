@@ -263,7 +263,7 @@ int ext2_unlink(uint32_t dir_ino, const char *name) {
     uint8_t *buf = kmalloc(block_size);
     if (!buf) return -ENOENT;
 
-    uint32_t dir_blocks = dir_inode.i_size / block_size;
+    uint32_t dir_blocks = (dir_inode.i_size + block_size - 1) / block_size;
     for (uint32_t b = 0; b < dir_blocks; b++) {
         uint32_t phys = get_block_from_inode(&dir_inode, b);
         if (phys == 0) continue;

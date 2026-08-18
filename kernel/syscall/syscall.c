@@ -108,8 +108,8 @@ uint64_t syscall_handler(uint64_t nr, uint64_t a1, uint64_t a2, uint64_t a3, uin
         return (uint64_t)vfs_chdir((const char *)a1);
     }
     case SYS_GETCWD: {
-        if (!validate_user_ptr_writable((void *)a1, (size_t)a2)) return (uint64_t)-1;
-        vfs_pwd((char *)a1, (int)a2); return 0;
+        if (!validate_user_ptr_writable((void *)a1, (size_t)a2)) return (uint64_t)-EFAULT;
+        return (uint64_t)vfs_pwd((char *)a1, (int)a2);
     }
 
     /* ===== Mount ===== */

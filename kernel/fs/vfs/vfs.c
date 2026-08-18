@@ -618,12 +618,13 @@ int vfs_chdir(const char *path) {
     return 0;
 }
 
-void vfs_pwd(char *buf, int bufsize) {
+int vfs_pwd(char *buf, int bufsize) {
     struct task *t = task_current();
     const char *cwd = (t && t->cwd[0]) ? t->cwd : "/";
     int i = 0;
     while (cwd[i] && i < bufsize - 1) { buf[i] = cwd[i]; i++; }
     buf[i] = '\0';
+    return 0;
 }
 
 void vfs_resolve_abs(const char *path, char *out, int outsize) {

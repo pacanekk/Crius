@@ -23,6 +23,7 @@ void shell_exec(char *line) {
     }
 
     if (argc == 0) return;
+    argv[argc] = NULL;
 
     /* Try builtins first */
     if (shell_try_builtin(argc, argv))
