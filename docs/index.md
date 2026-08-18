@@ -49,7 +49,7 @@ Components:
 
 1. `make` clones `freestanding-c-hdrs` and downloads Limine binaries.
 2. `make -C kernel` compiles all `kernel/**/*.c` and `kernel/arch/**/*.asm` files into `build/kernel.elf`.
-3. `make -C nexus` compiles userspace programs into `build/nexus/bin/*.elf`.
+3. `make -C nexus` compiles each userspace program into a separate ELF under `build/bin/*.elf`, then runs `tools/gen_progs.sh` to pack them into `tools/prog_data.c`. `build/nexus.elf` is the single init/ramfs module linked from `init.c`, libc, and the generated program data.
 4. The root Makefile creates `iso_root/`, copies the kernel, Nexus, and Limine files, and builds `crius.iso` with `xorriso`.
 
 ---
@@ -75,6 +75,9 @@ nexus/              Userspace environment (Nexus)
   coreutils/        Userspace utilities
   editor/           Simple editor
   tests/            Tests
+docs/               Technical documentation
+README.md           Project overview and quick start
+LICENSE             Custom license
 tools/              Linker scripts (kernel/linker.ld, nexus.ld, prog.ld), gen_progs.sh
 limine.conf         Limine boot menu configuration
 ```
@@ -355,7 +358,11 @@ Path resolution (`ext2_resolve_path`, `ext2_split_path`) and per-file block allo
 - `nexus/libc/src/mount.c` — mount syscalls
 - `nexus/libc/src/system.c` — `reboot`, `uptime`, `klog`, `memstats`
 - `nexus/libc/src/entry.c` — `_start` entry for every userspace binary
-- `nexus/libc/include/crius/abi.h` — shared ABI header
+- `nexus/libc/src/registry.c` — init / userspace program registry helpers
+- `nexus/libc/src/proc.c` — `get_proc_info` and process query helpers
+- `nexus/libc/include/api.h` — output helpers (`prog_print`, `prog_putc`, `prog_newline`)
+- `nexus/libc/include/` — freestanding-style libc headers (`unistd.h`, `string.h`, `stdlib.h`, `dirent.h`, `fcntl.h`, `errno.h`, `mount.h`, `proc.h`, `sys/stat.h`, `sys/types.h`, ...)
+- `abi/crius/abi.h` — shared kernel/userspace ABI header (syscalls, error numbers, structures)
 
 The C library does not implement the full C standard. It provides only the functions used by the included userspace programs.
 
@@ -373,7 +380,14 @@ The shell is in `nexus/shell/`:
 
 ### 10.4 Core Utilities
 
-`nexus/coreutils/` contains one-file programs. Each is linked with `libc` and a per-program `PROG_MAIN`. They are built from `nexus/Makefile` using `tools/gen_progs.sh` and `tools/prog.ld`.
+`nexus/coreutils/` contains the bulk of the user-mode programs. Commands are grouped by source file and linked with `libc` and a per-program `PROG_MAIN`. `tools/gen_progs.sh` embeds the built `build/bin/*.elf` files into `nexus.elf`.
+
+- `builtin.c` — `echo`, `clear`, `reboot`
+- `files.c` — `ls`, `cat`, `write`, `append`, `rm`, `mkdir`, `pwd`
+- `tasks.c` — `ps`, `kill`, `sleep`, `priority`
+- `disk.c` — `disk`, `rdisk`, `wdisk`, `mount`, `umount`
+- `help.c` — `help`
+- `svc.c` — `svc`
 
 ### 10.5 Editor and Tests
 
@@ -401,7 +415,7 @@ See `README.md` for the current list. In short:
 |--------|--------|
 | `make` | build `crius.iso` |
 | `make kernel` | build `build/kernel.elf` only |
-| `make nexus` | build userspace binaries only |
+| `make nexus` | build `build/nexus.elf` (init + libc + embedded programs) and the individual `build/bin/*.elf` files |
 | `make run` | run in QEMU with `disk.img` |
 | `make disk.img` | create the 64 MB ext2 test image |
 | `make clean` | remove build artifacts |

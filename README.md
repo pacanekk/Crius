@@ -13,7 +13,7 @@ Crius is an x86-64 operating system written in C and assembly, using the [Limine
 
 ```bash
 make        # build the kernel, userspace and create crius.iso
-make run    # boot the ISO in QEMU
+make run    # boot the ISO in QEMU (creates disk.img automatically if missing)
 ```
 
 ## Build
@@ -62,10 +62,15 @@ The official Crius build environment is Linux-based. On Windows, the recommended
 
 ```
 abi/        Kernel/userspace ABI definitions
+docs/       Technical documentation (start with docs/index.md)
 kernel/     Kernel source and headers
 nexus/      Userspace programs and libc
 tools/      Build helpers and linker scripts
 ```
+
+## Documentation
+
+Detailed technical documentation is in `docs/index.md`, including the architecture, kernel subsystems, system calls, file systems, userspace, build process, and current limitations.
 
 ## License
 
