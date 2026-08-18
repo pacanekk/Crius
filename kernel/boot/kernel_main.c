@@ -14,6 +14,7 @@
 #include "arch/cpu.h"
 #include "boot/boot.h"
 #include "drivers/pci.h"
+#include "drivers/xhci.h"
 
 /* ===== Kernel-level process subsystem tests =====
  * Run before init, with interrupts disabled.
@@ -469,6 +470,9 @@ void kmain(void) {
 
     serial_puts("pci: scanning\n");
     pci_init();
+
+    serial_puts("xhci: init\n");
+    xhci_init();
 
     /* Run kernel-level process tests before creating idle task.
      * Set current_task=0 to simulate idle as the running task,
