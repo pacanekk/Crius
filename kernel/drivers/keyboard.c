@@ -9,7 +9,7 @@ static unsigned char kb_buf[KB_BUF_SIZE];
 static int kb_buf_head = 0;
 static int kb_buf_tail = 0;
 
-static void kb_buf_push(unsigned char c) {
+void kb_buf_push(unsigned char c) {
     int next = (kb_buf_head + 1) % KB_BUF_SIZE;
     if (next == kb_buf_tail) return;
     kb_buf[kb_buf_head] = c;
@@ -26,6 +26,9 @@ unsigned char kb_buf_pop(void) {
 int kb_buf_pending(void) {
     return kb_buf_head != kb_buf_tail;
 }
+
+/* USB keyboard presence flag (set by xhci.c) */
+int usb_kbd_present = 0;
 
 static const char scancode_to_ascii[] = {
     0, 0x1B, '1','2','3','4','5','6','7','8','9','0','-','=', '\b',
@@ -122,6 +125,10 @@ void irq_handler(uint64_t vector) {
 int kbd_dev_read(char *buf, size_t bufsize) {
     if (bufsize == 0) return 0;
     unsigned char c = kb_buf_pop();
+    if (c == 0 && usb_kbd_present) {
+        usb_kbd_poll();
+        c = kb_buf_pop();
+    }
     if (c == 0) return 0;
     buf[0] = (char)c;
     return 1;
@@ -129,5 +136,5 @@ int kbd_dev_read(char *buf, size_t bufsize) {
 
 int kbd_dev_present(void) {
     uint8_t st = inb(0x64);
-    return (st != 0xFF);
+    return (st != 0xFF) || usb_kbd_present;
 }

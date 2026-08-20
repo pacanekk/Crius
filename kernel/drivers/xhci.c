@@ -237,10 +237,6 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
         if (!(sc & 1u)) continue; /* brak urządzenia */
 
         xhci_connected_port = port;
-        xhci_portsc = sc;
-
-        xhci_connected_port = port;
-        xhci_portsc = sc;
 
         serial_puts("xhci: port ");
         serial_hex(port); serial_puts(" device connected\n");
@@ -260,6 +256,7 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
         }
         if (ok) {
             uint32_t s = *portsc;
+            xhci_portsc = s;
             *portsc = (1u << 9) | (1u << 21); /* wyczyść PLC, zostaw zasilanie */
             serial_puts("xhci: port ");
             serial_hex(port); serial_puts(" reset done ped=");
@@ -397,10 +394,10 @@ static int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     memset((void *)dev_ctx, 0, 4096);
     xhci_dev_ctx = dev_ctx;
 
-    ep0_tr[0] = (uint32_t)ep0_tr_phys;
-    ep0_tr[1] = (uint32_t)(ep0_tr_phys >> 32);
+    ep0_tr[0] = 0;
+    ep0_tr[1] = 0;
     ep0_tr[2] = 0;
-    ep0_tr[3] = (6u << 10) | (1u << 1) | 1u;
+    ep0_tr[3] = 1u; /* reserved TRB, cycle 1 */
     ep0_cycle = 1;
     ep0_enq = 0;
 
@@ -410,7 +407,7 @@ static int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     in_ctx[9] = (root_port & 0xFF) << 16;
     /* EP0 context at offset 0x40, index 16 */
     in_ctx[16] = (max_pkt & 0x7FFF) << 16;
-    in_ctx[17] = 8; /* avg TRB length */
+    in_ctx[17] = (4u << 3) | 8; /* EP0 = control, avg TRB length */
     in_ctx[18] = (uint32_t)(ep0_tr_phys | 1);
     in_ctx[19] = (uint32_t)((ep0_tr_phys | 1) >> 32);
 
