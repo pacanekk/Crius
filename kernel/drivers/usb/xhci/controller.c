@@ -4,6 +4,7 @@
 #include "drivers/pci.h"
 #include "drivers/xhci.h"
 #include "drivers/keyboard.h"
+#include "xhci_internal.h"
 #include "mm/vmm.h"
 #include "mm/pmm.h"
 
@@ -11,22 +12,22 @@
 #define XHCI_SUBCLASS   0x03
 #define XHCI_PROG_IF    0x30
 
-static uint64_t cmd_phys;
-static volatile uint32_t *cmd_ring;
-static uint64_t event_phys;
-static volatile uint32_t *event_ring;
-static uint64_t *xhci_dcbaap;
-static volatile uint32_t *xhci_dev_ctx;
+uint64_t cmd_phys;
+volatile uint32_t *cmd_ring;
+uint64_t event_phys;
+volatile uint32_t *event_ring;
+uint64_t *xhci_dcbaap;
+volatile uint32_t *xhci_dev_ctx;
 static int xhci_connected_port = -1;
 static uint32_t xhci_portsc = 0;
-static uint8_t xhci_slot_id = 0;
-static uint32_t xhci_pspd = 0;
-static uint32_t xhci_root_port = 0;
-static int xhci_event_idx = 0;
-static uint32_t xhci_event_cycle = 1;
-static volatile uint64_t *xhci_erdp;
+uint8_t xhci_slot_id = 0;
+uint32_t xhci_pspd = 0;
+uint32_t xhci_root_port = 0;
+int xhci_event_idx = 0;
+uint32_t xhci_event_cycle = 1;
+volatile uint64_t *xhci_erdp;
 
-static void xhci_advance_event(int e) {
+void xhci_advance_event(int e) {
     if (!xhci_erdp) return;
     xhci_event_idx = e + 1;
     if (xhci_event_idx >= 256) {
@@ -35,37 +36,24 @@ static void xhci_advance_event(int e) {
     }
     *xhci_erdp = (event_phys + (uint64_t)xhci_event_idx * 16) | (xhci_event_cycle ? 8u : 0u);
 }
-static uint32_t cmd_cycle = 1;
+uint32_t cmd_cycle = 1;
 static uint64_t ep0_tr_phys;
 static volatile uint32_t *ep0_tr;
 static uint32_t ep0_cycle;
 static int ep0_enq = 0;
-static volatile uint8_t *xhci_cap;
-
-static uint32_t ep1_cycle;
-static uint64_t ep1_tr_phys;
-static volatile uint32_t *ep1_tr;
-static uint64_t ep1_data_phys;
-static volatile uint8_t *ep1_data;
-static uint16_t ep1_maxpkt = 8;
-static uint8_t ep1_interval = 10;
-static uint8_t ep1_num = 1;
-static uint8_t ep1_id = 3;
-static uint8_t ep1_ifnum = 0;
+volatile uint8_t *xhci_cap;
 
 static void xhci_reset(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsparams1);
 static int xhci_enable_slot(volatile uint8_t *cap);
 static int xhci_address_device(volatile uint8_t *cap, uint8_t caplen);
-static uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bRequest, uint16_t wValue, uint16_t wIndex, uint16_t wLength, volatile uint32_t *data, uint64_t data_phys);
-static uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bRequest, uint16_t wValue, uint16_t wIndex);
+uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bRequest, uint16_t wValue, uint16_t wIndex, uint16_t wLength, volatile uint32_t *data, uint64_t data_phys);
+uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bRequest, uint16_t wValue, uint16_t wIndex);
 static void xhci_get_device_descriptor(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_get_config_descriptor(volatile uint8_t *cap, uint8_t caplen);
-static uint8_t xhci_send_command(volatile uint8_t *cap, uint32_t word0, uint32_t word1, uint32_t word2, uint32_t word3);
-static uint8_t xhci_prep_ep0(volatile uint8_t *cap);
-static void xhci_setup_hid(volatile uint8_t *cap, uint8_t caplen);
-static void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen);
+uint8_t xhci_send_command(volatile uint8_t *cap, uint32_t word0, uint32_t word1, uint32_t word2, uint32_t word3);
+uint8_t xhci_prep_ep0(volatile uint8_t *cap);
 
 static uint64_t pci_bar_addr(const struct pci_device *d, int bar) {
     if (bar >= 6) return 0;
@@ -446,7 +434,7 @@ static int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     return (cc == 1) ? slot : 0;
 }
 
-static uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bRequest, uint16_t wValue, uint16_t wIndex, uint16_t wLength, volatile uint32_t *data, uint64_t data_phys) {
+uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bRequest, uint16_t wValue, uint16_t wIndex, uint16_t wLength, volatile uint32_t *data, uint64_t data_phys) {
     (void)data;
     if (!ep0_tr) { serial_puts("xhci: no ep0 tr\n"); return 0; }
 
@@ -514,7 +502,7 @@ static uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uin
     return cc;
 }
 
-static uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bRequest, uint16_t wValue, uint16_t wIndex) {
+uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bRequest, uint16_t wValue, uint16_t wIndex) {
     (void)cap;
     if (!ep0_tr) { serial_puts("xhci: no ep0 tr\n"); return 0; }
 
@@ -588,7 +576,7 @@ static void xhci_get_device_descriptor(volatile uint8_t *cap, uint8_t caplen) {
     serial_puts("xhci: get dev desc cc="); serial_hex(cc); serial_puts("\n");
 }
 
-static uint8_t xhci_prep_ep0(volatile uint8_t *cap) {
+uint8_t xhci_prep_ep0(volatile uint8_t *cap) {
     uint64_t deq = ep0_tr_phys + (uint64_t)ep0_enq * 4;
     uint64_t deq_val = deq | ep0_cycle;
     uint8_t scc;
@@ -601,7 +589,7 @@ static uint8_t xhci_prep_ep0(volatile uint8_t *cap) {
     return scc;
 }
 
-static uint8_t xhci_send_command(volatile uint8_t *cap, uint32_t word0, uint32_t word1, uint32_t word2, uint32_t word3) {
+uint8_t xhci_send_command(volatile uint8_t *cap, uint32_t word0, uint32_t word1, uint32_t word2, uint32_t word3) {
     if (!cmd_ring) { serial_puts("xhci: cmd ring not set\n"); return 0; }
 
     cmd_ring[0] = word0;
@@ -704,4 +692,4 @@ static void xhci_get_config_descriptor(volatile uint8_t *cap, uint8_t caplen) {
 }
 
 
-#include "xhci_hid.inc"
+

@@ -1,5 +1,26 @@
+#include <stdint.h>
+#include <string.h>
+#include "drivers/serial.h"
+#include "drivers/pci.h"
+#include "drivers/xhci.h"
+#include "drivers/keyboard.h"
+#include "mm/vmm.h"
+#include "mm/pmm.h"
+#include "../xhci/xhci_internal.h"
 
-static void xhci_setup_hid(volatile uint8_t *cap, uint8_t caplen) {
+uint32_t ep1_cycle;
+uint64_t ep1_tr_phys;
+volatile uint32_t *ep1_tr;
+uint64_t ep1_data_phys;
+volatile uint8_t *ep1_data;
+uint16_t ep1_maxpkt = 8;
+uint8_t ep1_interval = 10;
+uint8_t ep1_num = 1;
+uint8_t ep1_id = 3;
+uint8_t ep1_ifnum = 0;
+
+
+void xhci_setup_hid(volatile uint8_t *cap, uint8_t caplen) {
     (void)caplen;
     uint8_t cc;
 
@@ -28,7 +49,7 @@ static void xhci_setup_hid(volatile uint8_t *cap, uint8_t caplen) {
     (void)cap;
 }
 
-static void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen) {
+void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen) {
     (void)caplen;
     if (xhci_slot_id == 0) return;
 
