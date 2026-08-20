@@ -3,6 +3,7 @@
 #include "drivers/serial.h"
 #include "drivers/pci.h"
 #include "drivers/xhci.h"
+#include "drivers/keyboard.h"
 #include "mm/vmm.h"
 #include "mm/pmm.h"
 
@@ -39,40 +40,8 @@ static uint64_t ep0_tr_phys;
 static volatile uint32_t *ep0_tr;
 static uint32_t ep0_cycle;
 static int ep0_enq = 0;
-static uint64_t ep1_tr_phys;
-static volatile uint32_t *ep1_tr;
-static uint64_t ep1_data_phys;
-static volatile uint8_t *ep1_data;
-static uint16_t ep1_maxpkt = 8;
-static uint8_t ep1_interval = 10;
-static uint8_t ep1_num = 1;
-static uint8_t ep1_id = 3;
-static uint8_t ep1_ifnum = 0;
-static uint64_t *xhci_dcbaap;
-static volatile uint32_t *xhci_dev_ctx;
-static int xhci_connected_port = -1;
-static uint32_t xhci_portsc = 0;
-static uint8_t xhci_slot_id = 0;
-static uint32_t xhci_pspd = 0;
-static uint32_t xhci_root_port = 0;
-static int xhci_event_idx = 0;
-static uint32_t xhci_event_cycle = 1;
-static volatile uint64_t *xhci_erdp;
-
-static void xhci_advance_event(int e) {
-    if (!xhci_erdp) return;
-    xhci_event_idx = e + 1;
-    if (xhci_event_idx >= 256) {
-        xhci_event_idx = 0;
-        xhci_event_cycle ^= 1u;
-    }
-    *xhci_erdp = (event_phys + (uint64_t)xhci_event_idx * 16) | (xhci_event_cycle ? 8u : 0u);
-}
-static uint32_t cmd_cycle = 1;
-static uint64_t ep0_tr_phys;
-static volatile uint32_t *ep0_tr;
-static uint32_t ep0_cycle;
-static int ep0_enq = 0;
+static volatile uint8_t *xhci_cap;
+static uint32_t ep1_cycle;
 static uint64_t ep1_tr_phys;
 static volatile uint32_t *ep1_tr;
 static uint64_t ep1_data_phys;
@@ -163,7 +132,10 @@ void xhci_init(void) {
     serial_hex(hcsparams2); serial_puts("\n");
     serial_puts("xhci: hccparams1=");
     serial_hex(hccparams1); serial_puts("\n");
+    serial_puts("xhci: CSZ=");
+    serial_hex((hccparams1 >> 2) & 1u); serial_puts("\n");
 
+    xhci_cap = cap;
     xhci_reset(cap, caplen);
     xhci_setup_and_run(cap, caplen);
     xhci_ports_init(cap, caplen, hcsparams1);
@@ -237,6 +209,10 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
         if (!(sc & 1u)) continue; /* brak urządzenia */
 
         xhci_connected_port = port;
+        xhci_portsc = sc;
+
+        xhci_connected_port = port;
+        xhci_portsc = sc;
 
         serial_puts("xhci: port ");
         serial_hex(port); serial_puts(" device connected\n");
@@ -256,7 +232,6 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
         }
         if (ok) {
             uint32_t s = *portsc;
-            xhci_portsc = s;
             *portsc = (1u << 9) | (1u << 21); /* wyczyść PLC, zostaw zasilanie */
             serial_puts("xhci: port ");
             serial_hex(port); serial_puts(" reset done ped=");
@@ -325,7 +300,6 @@ static int xhci_enable_slot(volatile uint8_t *cap) {
     if (!cmd_ring) { serial_puts("xhci: cmd ring not set\n"); return 0; }
 
     uint32_t cyc = cmd_cycle;
-    uint32_t cyc = cmd_cycle;
     cmd_ring[0] = 0;
     cmd_ring[1] = 0;
     cmd_ring[2] = 0;
@@ -340,7 +314,6 @@ static int xhci_enable_slot(volatile uint8_t *cap) {
     volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
     db[0] = 0; /* DB_VALUE_HOST */
     (void)db[0];
-    cmd_cycle ^= 1u;
     cmd_cycle ^= 1u;
 
     int e = xhci_event_idx;
@@ -397,7 +370,11 @@ static int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     ep0_tr[0] = 0;
     ep0_tr[1] = 0;
     ep0_tr[2] = 0;
-    ep0_tr[3] = 1u; /* reserved TRB, cycle 1 */
+    ep0_tr[3] = (8u << 10) | 1u; /* No-Op, cycle 1 */
+    ep0_tr[4] = (uint32_t)ep0_tr_phys;
+    ep0_tr[5] = (uint32_t)(ep0_tr_phys >> 32);
+    ep0_tr[6] = 0;
+    ep0_tr[7] = (6u << 10) | (1u << 1) | 1u; /* Link with TC, cycle 1 */
     ep0_cycle = 1;
     ep0_enq = 0;
 
@@ -406,10 +383,27 @@ static int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     in_ctx[8] = (pspd << 20) | (1u << 27); /* speed, context entries = 1 */
     in_ctx[9] = (root_port & 0xFF) << 16;
     /* EP0 context at offset 0x40, index 16 */
-    in_ctx[16] = (max_pkt & 0x7FFF) << 16;
-    in_ctx[17] = (4u << 3) | 8; /* EP0 = control, avg TRB length */
+    in_ctx[16] = 0; /* EP0 dword0: state etc. */
+    in_ctx[17] = ((max_pkt & 0x7FFF) << 16) | (4u << 3) | (3u << 1); /* max packet, EP type control, CErr=3 */
     in_ctx[18] = (uint32_t)(ep0_tr_phys | 1);
     in_ctx[19] = (uint32_t)((ep0_tr_phys | 1) >> 32);
+    in_ctx[20] = 8; /* average TRB length in dword4 */
+
+    serial_puts("xhci: slot=");
+    serial_hex(xhci_slot_id);
+    serial_puts(" port="); serial_hex(xhci_root_port);
+    serial_puts(" speed="); serial_hex(xhci_pspd);
+    serial_puts(" maxpkt="); serial_hex(max_pkt);
+    serial_puts("\n");
+    serial_puts("xhci: in_ctx="); serial_hex((uint32_t)in_ctx_phys);
+    serial_puts(" dev_ctx="); serial_hex((uint32_t)dev_ctx_phys);
+    serial_puts(" ep0="); serial_hex((uint32_t)ep0_tr_phys);
+    serial_puts(" cmd="); serial_hex((uint32_t)cmd_phys);
+    serial_puts("\n");
+    for (int i = 0; i < 24; i++) {
+        serial_puts("IC["); serial_hex(i); serial_puts("]=");
+        serial_hex(in_ctx[i]); serial_puts("\n");
+    }
 
     xhci_dcbaap[xhci_slot_id] = dev_ctx_phys;
 
@@ -669,21 +663,22 @@ static void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen) {
     serial_puts("xhci: configure ep1 cc="); serial_hex(ccc); serial_puts("\n");
     if (ccc != 1) return;
 
-    uint32_t cyc = 1;
+    ep1_cycle = 1;
     ep1_tr[0] = (uint32_t)data_phys;
     ep1_tr[1] = (uint32_t)(data_phys >> 32);
     ep1_tr[2] = ep1_maxpkt;
-    ep1_tr[3] = (1u << 10) | (1u << 5) | cyc;
-    ep1_tr[4] = 0;
-    ep1_tr[5] = 0;
+    ep1_tr[3] = (1u << 10) | (1u << 5) | ep1_cycle;
+    ep1_tr[4] = (uint32_t)ep1_tr_phys;
+    ep1_tr[5] = (uint32_t)(ep1_tr_phys >> 32);
     ep1_tr[6] = 0;
-    ep1_tr[7] = (8u << 10) | cyc;
+    ep1_tr[7] = (6u << 10) | ep1_cycle;
 
     uint32_t db_off = *(volatile uint32_t *)(cap + 0x14);
     volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
     db[xhci_slot_id] = ep1_id;
     (void)db[xhci_slot_id];
     serial_puts("xhci: ep1 armed\n");
+    usb_kbd_present = 1;
 
     /* wait a short while for a test key from QEMU monitor */
     int e = xhci_event_idx;
@@ -816,5 +811,96 @@ static void xhci_get_config_descriptor(volatile uint8_t *cap, uint8_t caplen) {
         }
         i += len;
     }
+}
+
+int usb_kbd_poll(void) {
+    if (!xhci_slot_id || !ep1_tr || !event_ring || !xhci_cap) return 0;
+
+    int e = xhci_event_idx;
+    uint32_t ev3 = event_ring[e * 4 + 3];
+    uint8_t type = (uint8_t)((ev3 >> 10) & 0x3F);
+    if (type != 32) return 0;
+
+    uint8_t slot = (uint8_t)(ev3 >> 24);
+    uint8_t ep = (uint8_t)((ev3 >> 16) & 0x1F);
+    uint32_t ev2 = event_ring[e * 4 + 2];
+    uint8_t cc = (uint8_t)(ev2 >> 24);
+    if (slot != xhci_slot_id) return 0;
+
+    xhci_advance_event(e);
+
+    if (ep != ep1_id || (cc != 1 && cc != 6)) {
+        serial_puts("xhci: report ep="); serial_hex(ep);
+        serial_puts(" cc="); serial_hex(cc); serial_puts("\n");
+        return 0;
+    }
+
+    static uint8_t prev[8];
+    uint8_t new[8];
+    for (int i = 0; i < 8; i++) new[i] = ep1_data[i];
+
+    uint32_t ep_state = xhci_dev_ctx[24] & 0x7u;
+    uint32_t dcs = xhci_dev_ctx[26] & 1u;
+    serial_puts("xhci: rep ep_state="); serial_hex(ep_state);
+    serial_puts(" dcs="); serial_hex(dcs); serial_puts(" ");
+    for (int i = 0; i < 8; i++) { serial_hex(new[i]); serial_puts(" "); }
+    serial_puts("\n");
+
+    for (int i = 2; i < 8; i++) {
+        uint8_t code = new[i];
+        if (code == 0) continue;
+        int was = 0;
+        for (int j = 2; j < 8; j++) {
+            if (prev[j] == code) { was = 1; break; }
+        }
+        if (was) continue;
+
+        char c = 0;
+        if (code >= 0x04 && code <= 0x1d) c = 'a' + (code - 0x04);
+        else if (code >= 0x1e && code <= 0x27) {
+            const char *nums = "1234567890";
+            c = nums[code - 0x1e];
+        } else if (code == 0x28) c = '\n';
+        else if (code == 0x29) c = 0x1b;
+        else if (code == 0x2a) c = '\b';
+        else if (code == 0x2b) c = '\t';
+        else if (code == 0x2c) c = ' ';
+        else if (code == 0x2d) c = '-';
+        else if (code == 0x2e) c = '=';
+        else if (code == 0x2f) c = '[';
+        else if (code == 0x30) c = ']';
+        else if (code == 0x31) c = '\\';
+        else if (code == 0x33) c = ';';
+        else if (code == 0x34) c = '\'';
+        else if (code == 0x35) c = '`';
+        else if (code == 0x36) c = ',';
+        else if (code == 0x37) c = '.';
+        else if (code == 0x38) c = '/';
+
+        if (c) {
+            serial_puts("xhci: key "); serial_putc(c); serial_puts("\n");
+            kb_buf_push((unsigned char)c);
+        }
+    }
+
+    for (int i = 0; i < 8; i++) prev[i] = new[i];
+
+    /* ustaw cycle tak, żeby pasował do aktualnego DCS kontrolera */
+    dcs = xhci_dev_ctx[26] & 1u;
+    ep1_cycle = dcs;
+    ep1_tr[0] = (uint32_t)ep1_data_phys;
+    ep1_tr[1] = (uint32_t)(ep1_data_phys >> 32);
+    ep1_tr[2] = ep1_maxpkt;
+    ep1_tr[3] = (1u << 10) | (1u << 5) | ep1_cycle;
+    ep1_tr[4] = (uint32_t)ep1_tr_phys;
+    ep1_tr[5] = (uint32_t)(ep1_tr_phys >> 32);
+    ep1_tr[6] = 0;
+    ep1_tr[7] = (6u << 10) | ep1_cycle;
+
+    uint32_t db_off = *(volatile uint32_t *)(xhci_cap + 0x14);
+    volatile uint32_t *db = (volatile uint32_t *)(xhci_cap + (db_off & ~0x03u));
+    db[xhci_slot_id] = ep1_id;
+    (void)db[xhci_slot_id];
+    return 1;
 }
 

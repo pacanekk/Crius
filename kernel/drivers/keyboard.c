@@ -124,14 +124,16 @@ void irq_handler(uint64_t vector) {
 
 int kbd_dev_read(char *buf, size_t bufsize) {
     if (bufsize == 0) return 0;
-    unsigned char c = kb_buf_pop();
-    if (c == 0 && usb_kbd_present) {
-        usb_kbd_poll();
-        c = kb_buf_pop();
+    for (;;) {
+        unsigned char c = kb_buf_pop();
+        if (c) { buf[0] = (char)c; return 1; }
+        if (usb_kbd_present) {
+            usb_kbd_poll();
+            c = kb_buf_pop();
+            if (c) { buf[0] = (char)c; return 1; }
+        }
+        __asm__ volatile ("sti; hlt");
     }
-    if (c == 0) return 0;
-    buf[0] = (char)c;
-    return 1;
 }
 
 int kbd_dev_present(void) {
