@@ -1,0 +1,204 @@
+
+static void xhci_setup_hid(volatile uint8_t *cap, uint8_t caplen) {
+    (void)caplen;
+    uint8_t cc;
+
+    if (xhci_prep_ep0(cap) != 1) return;
+    cc = xhci_control_out(cap, 0x00, 0x09, 1, 0); /* SET_CONFIGURATION */
+    serial_puts("xhci: set config cc="); serial_hex(cc); serial_puts("\n");
+    if (cc != 1) return;
+
+    if (xhci_prep_ep0(cap) != 1) return;
+    cc = xhci_control_out(cap, 0x21, 0x0B, 0, ep1_ifnum); /* SET_PROTOCOL (boot) */
+    serial_puts("xhci: set protocol cc="); serial_hex(cc); serial_puts("\n");
+    if (cc != 1) return;
+
+    if (xhci_prep_ep0(cap) != 1) return;
+    cc = xhci_control_out(cap, 0x21, 0x0A, 0, ep1_ifnum); /* SET_IDLE (duration=0) */
+    serial_puts("xhci: set idle cc="); serial_hex(cc); serial_puts("\n");
+    if (cc != 1) return;
+
+    uint64_t report_phys = pmm_alloc_page();
+    if (report_phys == 0) { serial_puts("xhci: no report page\n"); return; }
+    volatile uint32_t *report = (volatile uint32_t *)(vmm_get_hhdm() + report_phys);
+    memset((void *)report, 0, 4096);
+    cc = xhci_control_in(cap, 0xA1, 0x01, 0x0100, ep1_ifnum, 8, report, report_phys); /* GET_REPORT */
+    serial_puts("xhci: get report cc="); serial_hex(cc); serial_puts("\n");
+
+    (void)cap;
+}
+
+static void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen) {
+    (void)caplen;
+    if (xhci_slot_id == 0) return;
+
+    uint64_t in_ctx_phys = pmm_alloc_page();
+    if (in_ctx_phys == 0) { serial_puts("xhci: no in ctx cfg\n"); return; }
+    volatile uint32_t *in_ctx = (volatile uint32_t *)(vmm_get_hhdm() + in_ctx_phys);
+    memset((void *)in_ctx, 0, 4096);
+
+    ep1_tr_phys = pmm_alloc_page();
+    if (ep1_tr_phys == 0) { serial_puts("xhci: no ep1 tr\n"); return; }
+    ep1_tr = (volatile uint32_t *)(vmm_get_hhdm() + ep1_tr_phys);
+    memset((void *)ep1_tr, 0, 4096);
+
+    uint64_t data_phys = pmm_alloc_page();
+    if (data_phys == 0) { serial_puts("xhci: no ep1 data\n"); return; }
+    ep1_data_phys = data_phys;
+    ep1_data = (volatile uint8_t *)(vmm_get_hhdm() + data_phys);
+
+    uint32_t ep_base = 8u + (uint32_t)ep1_id * 8u;
+    in_ctx[1] = 1u | (1u << (uint32_t)ep1_id); /* add slot and selected EP contexts */
+    in_ctx[8] = (xhci_pspd << 20) | ((uint32_t)ep1_id << 27);
+    in_ctx[9] = (xhci_root_port & 0xFF) << 16;
+    in_ctx[ep_base + 0] = (uint32_t)ep1_interval << 16;
+    in_ctx[ep_base + 1] = (7u << 3) | (3u << 1) | ((uint32_t)ep1_maxpkt << 16);
+    in_ctx[ep_base + 2] = (uint32_t)(ep1_tr_phys | 1);
+    in_ctx[ep_base + 3] = (uint32_t)((ep1_tr_phys | 1) >> 32);
+    in_ctx[ep_base + 4] = (uint32_t)ep1_maxpkt | ((uint32_t)ep1_maxpkt << 16);
+
+    uint8_t ccc = xhci_send_command(cap, (uint32_t)in_ctx_phys, (uint32_t)(in_ctx_phys >> 32), 0,
+        (12u << 10) | ((uint32_t)xhci_slot_id << 24) | cmd_cycle);
+    serial_puts("xhci: configure ep1 cc="); serial_hex(ccc); serial_puts("\n");
+    if (ccc != 1) return;
+
+    ep1_cycle = 1;
+    ep1_tr[0] = (uint32_t)data_phys;
+    ep1_tr[1] = (uint32_t)(data_phys >> 32);
+    ep1_tr[2] = ep1_maxpkt;
+    ep1_tr[3] = (1u << 10) | (1u << 5) | ep1_cycle;
+    ep1_tr[4] = (uint32_t)ep1_tr_phys;
+    ep1_tr[5] = (uint32_t)(ep1_tr_phys >> 32);
+    ep1_tr[6] = 0;
+    ep1_tr[7] = (6u << 10) | ep1_cycle;
+
+    uint32_t db_off = *(volatile uint32_t *)(cap + 0x14);
+    volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
+    db[xhci_slot_id] = ep1_id;
+    (void)db[xhci_slot_id];
+    serial_puts("xhci: ep1 armed\n");
+    usb_kbd_present = 1;
+
+    /* wait a short while for a test key from QEMU monitor */
+    int e = xhci_event_idx;
+    int got = 0;
+    for (long long i = 0; i < 2000000000LL; i++) {
+        uint32_t ev3 = event_ring[e * 4 + 3];
+        uint8_t type = (uint8_t)((ev3 >> 10) & 0x3F);
+        if (type == 32) {
+            uint8_t slot = (uint8_t)(ev3 >> 24);
+            uint8_t ep = (uint8_t)((ev3 >> 16) & 0x1F);
+            uint32_t ev2 = event_ring[e * 4 + 2];
+            uint8_t cc = (uint8_t)(ev2 >> 24);
+            if (slot == xhci_slot_id && ep == ep1_id && cc == 1) {
+                got = 1;
+                break;
+            }
+            if (e < 255) e++;
+            continue;
+        }
+        if (type != 0 && e < 255) e++;
+    }
+    if (got) {
+        xhci_advance_event(e);
+        serial_puts("xhci: hid report");
+        for (int i = 0; i < 8; i++) {
+            serial_puts(" ");
+            serial_hex(ep1_data[i]);
+        }
+        serial_puts("\n");
+    }
+}
+
+
+int usb_kbd_poll(void) {
+    if (!xhci_slot_id || !ep1_tr || !event_ring || !xhci_cap) return 0;
+
+    int e = xhci_event_idx;
+    uint32_t ev3 = event_ring[e * 4 + 3];
+    uint8_t type = (uint8_t)((ev3 >> 10) & 0x3F);
+    if (type != 32) return 0;
+
+    uint8_t slot = (uint8_t)(ev3 >> 24);
+    uint8_t ep = (uint8_t)((ev3 >> 16) & 0x1F);
+    uint32_t ev2 = event_ring[e * 4 + 2];
+    uint8_t cc = (uint8_t)(ev2 >> 24);
+    if (slot != xhci_slot_id) return 0;
+
+    xhci_advance_event(e);
+
+    if (ep != ep1_id || (cc != 1 && cc != 6)) {
+        serial_puts("xhci: report ep="); serial_hex(ep);
+        serial_puts(" cc="); serial_hex(cc); serial_puts("\n");
+        return 0;
+    }
+
+    static uint8_t prev[8];
+    uint8_t new[8];
+    for (int i = 0; i < 8; i++) new[i] = ep1_data[i];
+
+    uint32_t ep_state = xhci_dev_ctx[24] & 0x7u;
+    uint32_t dcs = xhci_dev_ctx[26] & 1u;
+    serial_puts("xhci: rep ep_state="); serial_hex(ep_state);
+    serial_puts(" dcs="); serial_hex(dcs); serial_puts(" ");
+    for (int i = 0; i < 8; i++) { serial_hex(new[i]); serial_puts(" "); }
+    serial_puts("\n");
+
+    for (int i = 2; i < 8; i++) {
+        uint8_t code = new[i];
+        if (code == 0) continue;
+        int was = 0;
+        for (int j = 2; j < 8; j++) {
+            if (prev[j] == code) { was = 1; break; }
+        }
+        if (was) continue;
+
+        char c = 0;
+        if (code >= 0x04 && code <= 0x1d) c = 'a' + (code - 0x04);
+        else if (code >= 0x1e && code <= 0x27) {
+            const char *nums = "1234567890";
+            c = nums[code - 0x1e];
+        } else if (code == 0x28) c = '\n';
+        else if (code == 0x29) c = 0x1b;
+        else if (code == 0x2a) c = '\b';
+        else if (code == 0x2b) c = '\t';
+        else if (code == 0x2c) c = ' ';
+        else if (code == 0x2d) c = '-';
+        else if (code == 0x2e) c = '=';
+        else if (code == 0x2f) c = '[';
+        else if (code == 0x30) c = ']';
+        else if (code == 0x31) c = '\\';
+        else if (code == 0x33) c = ';';
+        else if (code == 0x34) c = '\'';
+        else if (code == 0x35) c = '`';
+        else if (code == 0x36) c = ',';
+        else if (code == 0x37) c = '.';
+        else if (code == 0x38) c = '/';
+
+        if (c) {
+            serial_puts("xhci: key "); serial_putc(c); serial_puts("\n");
+            kb_buf_push((unsigned char)c);
+        }
+    }
+
+    for (int i = 0; i < 8; i++) prev[i] = new[i];
+
+    /* ustaw cycle tak, żeby pasował do aktualnego DCS kontrolera */
+    dcs = xhci_dev_ctx[26] & 1u;
+    ep1_cycle = dcs;
+    ep1_tr[0] = (uint32_t)ep1_data_phys;
+    ep1_tr[1] = (uint32_t)(ep1_data_phys >> 32);
+    ep1_tr[2] = ep1_maxpkt;
+    ep1_tr[3] = (1u << 10) | (1u << 5) | ep1_cycle;
+    ep1_tr[4] = (uint32_t)ep1_tr_phys;
+    ep1_tr[5] = (uint32_t)(ep1_tr_phys >> 32);
+    ep1_tr[6] = 0;
+    ep1_tr[7] = (6u << 10) | ep1_cycle;
+
+    uint32_t db_off = *(volatile uint32_t *)(xhci_cap + 0x14);
+    volatile uint32_t *db = (volatile uint32_t *)(xhci_cap + (db_off & ~0x03u));
+    db[xhci_slot_id] = ep1_id;
+    (void)db[xhci_slot_id];
+    return 1;
+}
+
