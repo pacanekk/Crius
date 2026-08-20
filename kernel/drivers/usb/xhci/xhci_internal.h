@@ -7,6 +7,8 @@ extern volatile uint8_t *xhci_cap;
 extern uint8_t xhci_slot_id;
 extern uint32_t xhci_pspd;
 extern uint32_t xhci_root_port;
+extern int xhci_connected_port;
+extern uint32_t xhci_portsc;
 extern uint64_t *xhci_dcbaap;
 extern volatile uint32_t *xhci_dev_ctx;
 
@@ -31,7 +33,16 @@ extern uint32_t cmd_cycle;
 extern volatile uint32_t *cmd_ring;
 extern uint64_t cmd_phys;
 
+extern uint64_t ep0_tr_phys;
+extern volatile uint32_t *ep0_tr;
+extern uint32_t ep0_cycle;
+extern int ep0_enq;
+
 void xhci_advance_event(int e);
+void xhci_get_device_descriptor(volatile uint8_t *cap, uint8_t caplen);
+void xhci_get_config_descriptor(volatile uint8_t *cap, uint8_t caplen);
+int xhci_enable_slot(volatile uint8_t *cap);
+int xhci_address_device(volatile uint8_t *cap, uint8_t caplen);
 uint8_t xhci_send_command(volatile uint8_t *cap, uint32_t word0, uint32_t word1, uint32_t word2, uint32_t word3);
 uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bRequest, uint16_t wValue, uint16_t wIndex, uint16_t wLength, volatile uint32_t *data, uint64_t data_phys);
 uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bRequest, uint16_t wValue, uint16_t wIndex);
