@@ -40,6 +40,7 @@ extern uint8_t xhci_first_if_sub;
 extern uint8_t xhci_first_if_proto;
 extern uint8_t xhci_first_dev_cc;
 extern uint8_t xhci_first_cfg_cc;
+extern int xhci_total_devices;
 
 extern uint64_t ep0_tr_phys;
 extern volatile uint32_t *ep0_tr;

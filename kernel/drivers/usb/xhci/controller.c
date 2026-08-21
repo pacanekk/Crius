@@ -41,6 +41,7 @@ uint8_t xhci_first_if_sub = 0;
 uint8_t xhci_first_if_proto = 0;
 uint8_t xhci_first_dev_cc = 0;
 uint8_t xhci_first_cfg_cc = 0;
+int xhci_total_devices = 0;
 static void xhci_reset(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsparams1);
@@ -235,11 +236,11 @@ void xhci_init(void) {
 
     if (!usb_kbd_present) {
         serial_puts("xhci: no keyboard found\n");
-        if (xhci_device_count == 0) {
+        if (xhci_total_devices == 0) {
             fb_puts("Crius: no USB devices on xHCI\n", 0x00FFFFFF, 0x00000000);
         } else {
             fb_puts("Crius: xHCI ", 0x00FFFFFF, 0x00000000);
-            fb_print_hex(xhci_device_count);
+            fb_print_hex(xhci_total_devices);
             fb_puts(" devs, devcc=", 0x00FFFFFF, 0x00000000);
             fb_print_hex8(xhci_first_dev_cc);
             fb_puts(" cfgcc=", 0x00FFFFFF, 0x00000000);
@@ -298,6 +299,7 @@ static void xhci_reset(volatile uint8_t *cap, uint8_t caplen) {
 }
 
 static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsparams1) {
+    xhci_device_count = 0;
     uint8_t max_ports = (hcsparams1 >> 24) & 0xFF;
     volatile uint32_t *op = (volatile uint32_t *)(cap + caplen);
 
@@ -326,10 +328,11 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
 
         if (!connected) continue; /* no device */
 
-            if (xhci_device_count < XHCI_MAX_DEVICES) {
+        if (xhci_device_count < XHCI_MAX_DEVICES) {
             xhci_devices[xhci_device_count].port = port;
             xhci_devices[xhci_device_count].sc = sc;
             xhci_device_count++;
+            xhci_total_devices++;
         }
 
         serial_puts("xhci: port ");
