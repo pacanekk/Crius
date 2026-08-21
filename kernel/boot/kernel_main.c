@@ -15,6 +15,8 @@
 #include "boot/boot.h"
 #include "drivers/pci.h"
 #include "drivers/xhci.h"
+#include "drivers/ehci.h"
+#include "drivers/keyboard.h"
 
 /* ===== Kernel-level process subsystem tests =====
  * Run before init, with interrupts disabled.
@@ -473,6 +475,10 @@ void kmain(void) {
 
     serial_puts("xhci: init\n");
     xhci_init();
+    if (!usb_kbd_present) {
+        serial_puts("ehci: init\n");
+        ehci_init();
+    }
 
     /* Run kernel-level process tests before creating idle task.
      * Set current_task=0 to simulate idle as the running task,
