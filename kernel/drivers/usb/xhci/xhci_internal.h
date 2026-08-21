@@ -23,6 +23,7 @@ extern uint8_t ep1_interval;
 extern uint8_t ep1_num;
 extern uint8_t ep1_id;
 extern uint8_t ep1_ifnum;
+extern uint8_t xhci_config_value;
 
 extern volatile uint32_t *event_ring;
 extern int xhci_event_idx;

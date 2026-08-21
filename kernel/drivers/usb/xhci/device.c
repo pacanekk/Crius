@@ -7,6 +7,8 @@
 #include "mm/vmm.h"
 #include "mm/pmm.h"
 
+uint8_t xhci_config_value = 1;
+
 int xhci_enable_slot(volatile uint8_t *cap) {
     if (!cmd_ring) { serial_puts("xhci: cmd ring not set\n"); return 0; }
 
@@ -183,6 +185,8 @@ void xhci_get_config_descriptor(volatile uint8_t *cap, uint8_t caplen) {
     }
     uint8_t bNumInterfaces = b[4];
     uint8_t bConfigurationValue = b[5];
+    xhci_config_value = bConfigurationValue;
+    if (xhci_config_value == 0) xhci_config_value = 1;
     serial_puts("xhci: cfg wTotalLength="); serial_hex(wTotalLength);    serial_puts(" bNumInterfaces="); serial_hex(bNumInterfaces);
     serial_puts(" bConfigurationValue="); serial_hex(bConfigurationValue); serial_puts("\n");
 

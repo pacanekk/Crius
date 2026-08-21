@@ -78,7 +78,7 @@ void xhci_setup_hid(volatile uint8_t *cap, uint8_t caplen) {
 
     if (ep1_id == 0 || ep1_ifnum == 0xFF) return;
     if (xhci_prep_ep0(cap) != 1) return;
-    cc = xhci_control_out(cap, 0x00, 0x09, 1, 0); /* SET_CONFIGURATION */
+    cc = xhci_control_out(cap, 0x00, 0x09, xhci_config_value, 0); /* SET_CONFIGURATION */
     serial_puts("xhci: set config cc="); serial_hex(cc); serial_puts("\n");
     if (cc != 1) return;
 
@@ -90,7 +90,7 @@ void xhci_setup_hid(volatile uint8_t *cap, uint8_t caplen) {
     if (xhci_prep_ep0(cap) != 1) return;
     cc = xhci_control_out(cap, 0x21, 0x0A, 0, ep1_ifnum); /* SET_IDLE (duration=0) */
     serial_puts("xhci: set idle cc="); serial_hex(cc); serial_puts("\n");
-    if (cc != 1) return;
+    if (cc != 1) serial_puts("xhci: set idle not supported, continuing\n");
 
     uint64_t report_phys = pmm_alloc_page();
     if (report_phys == 0) { serial_puts("xhci: no report page\n"); return; }
