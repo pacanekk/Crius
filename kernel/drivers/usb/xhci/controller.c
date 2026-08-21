@@ -94,24 +94,8 @@ static uint32_t xhci_mfindex(volatile uint8_t *cap) {
 }
 
 static void xhci_mdelay(volatile uint8_t *cap, uint32_t ms) {
-    uint32_t start = xhci_mfindex(cap);
-    uint32_t ticks = ms * 8u;
-    uint32_t prev = start;
-    uint32_t stuck = 0;
-    volatile uint64_t spins = 0;
-    for (;;) {
-        uint32_t now = xhci_mfindex(cap);
-        uint32_t delta = (now - start) & 0x3FFFu;
-        if (delta >= ticks) break;
-        if (now == prev) {
-            if (++stuck > 1000) break; /* MFINDEX not advancing */
-        } else {
-            stuck = 0;
-            prev = now;
-        }
-        if (spins++ > 0x40000000ULL) break; /* ~1 s on fast CPU */
-        __asm__ volatile ("pause");
-    }
+    (void)cap;
+    apic_mdelay(ms);
 }
 
 void xhci_init(void) {
