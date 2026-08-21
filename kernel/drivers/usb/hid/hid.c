@@ -19,8 +19,8 @@ uint8_t ep1_num = 0;
 uint8_t ep1_id = 0;
 uint8_t ep1_ifnum = 0xFF;
 
-#define REPEAT_START 400
-#define REPEAT_PERIOD 30
+#define REPEAT_START 600
+#define REPEAT_PERIOD 40
 
 static uint8_t usb_kbd_prev[8];
 static uint16_t usb_kbd_repeat[256];
