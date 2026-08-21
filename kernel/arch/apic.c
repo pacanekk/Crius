@@ -45,9 +45,17 @@ void ioapic_set_redirect(uint8_t irq, uint8_t vector) {
     ioapic_write(entry, low);
 }
 
+uint64_t tsc_per_ms = 0;
+
 static uint64_t hhdm_offset;
 static uint64_t kern_phys_base;
 static uint64_t kern_virt_base;
+
+static uint64_t tsc_read(void) {
+    uint32_t lo, hi;
+    __asm__ volatile ("rdtsc" : "=a"(lo), "=d"(hi));
+    return ((uint64_t)hi << 32) | lo;
+}
 
 static uint64_t pt_storage[4 * 512] __attribute__((aligned(4096)));
 static int pt_next = 0;
@@ -219,11 +227,16 @@ void apic_init(uint64_t hhdm_offset_param, uint64_t phys_base, uint64_t virt_bas
     outb(0x42, (11932 >> 8) & 0xFF);
     outb(0x61, (gate & ~0x02) | 0x01); /* enable channel 2 gate, disable speaker */
 
+    uint64_t tsc_start = tsc_read();
+
     LAPIC_REG(LAPIC_TIMER_DIV) = 0x3;
     LAPIC_REG(LAPIC_TIMER_INIT) = 0xFFFFFFFF;
 
     /* Wait for PIT channel 2 to count down (bit 5 of port 0x61 goes high) */
     while (!(inb(0x61) & 0x20));
+
+    uint64_t tsc_end = tsc_read();
+    tsc_per_ms = (tsc_end - tsc_start) / 10;
 
     uint32_t elapsed = 0xFFFFFFFF - LAPIC_REG(LAPIC_TIMER_CUR);
     outb(0x61, gate & ~0x01);          /* disable channel 2 gate, restore */
@@ -241,15 +254,19 @@ void apic_eoi(void) {
     LAPIC_REG(LAPIC_EOI) = 0;
 }
 
-void apic_mdelay(uint32_t ms) {
-    if (apic_per_tick == 0) {
+void tsc_mdelay(uint32_t ms) {
+    if (tsc_per_ms == 0) {
         for (volatile uint64_t i = 0; i < (uint64_t)ms * 0x40000ULL; i++)
             __asm__ volatile ("pause");
         return;
     }
-    uint32_t start = LAPIC_REG(LAPIC_TIMER_CUR);
-    uint32_t target = apic_per_tick * ms;
-    while (((start - LAPIC_REG(LAPIC_TIMER_CUR)) & 0xFFFFFFFFu) < target)
+    uint64_t start = tsc_read();
+    uint64_t target = (uint64_t)ms * tsc_per_ms;
+    while (tsc_read() - start < target)
         __asm__ volatile ("pause");
+}
+
+void apic_mdelay(uint32_t ms) {
+    tsc_mdelay(ms);
 }
 

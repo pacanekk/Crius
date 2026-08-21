@@ -12,4 +12,7 @@ void ioapic_set_redirect(uint8_t irq, uint8_t vector);
 void apic_mdelay(uint32_t ms);
 extern uint32_t apic_per_tick;
 
+extern uint64_t tsc_per_ms;
+void tsc_mdelay(uint32_t ms);
+
 #endif
