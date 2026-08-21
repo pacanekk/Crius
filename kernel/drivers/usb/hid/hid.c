@@ -19,6 +19,58 @@ uint8_t ep1_num = 0;
 uint8_t ep1_id = 0;
 uint8_t ep1_ifnum = 0xFF;
 
+#define REPEAT_START 400
+#define REPEAT_PERIOD 30
+
+static uint8_t usb_kbd_prev[8];
+static uint8_t usb_kbd_repeat[256];
+
+static char usb_kbd_code_to_char(uint8_t code) {
+    char c = 0;
+    if (code >= 0x04 && code <= 0x1d) c = 'a' + (code - 0x04);
+    else if (code >= 0x1e && code <= 0x27) {
+        const char *nums = "1234567890";
+        c = nums[code - 0x1e];
+    } else if (code == 0x28) c = '\n';
+    else if (code == 0x29) c = 0x1b;
+    else if (code == 0x2a) c = '\b';
+    else if (code == 0x2b) c = '\t';
+    else if (code == 0x2c) c = ' ';
+    else if (code == 0x2d) c = '-';
+    else if (code == 0x2e) c = '=';
+    else if (code == 0x2f) c = '[';
+    else if (code == 0x30) c = ']';
+    else if (code == 0x31) c = '\\';
+    else if (code == 0x33) c = ';';
+    else if (code == 0x34) c = '\'';
+    else if (code == 0x35) c = '`';
+    else if (code == 0x36) c = ',';
+    else if (code == 0x37) c = '.';
+    else if (code == 0x38) c = '/';
+    return c;
+}
+
+void usb_kbd_tick(void) {
+    if (!usb_kbd_present) return;
+    uint8_t current[256] = {0};
+    for (int i = 2; i < 8; i++) {
+        uint8_t code = usb_kbd_prev[i];
+        if (code) current[code] = 1;
+    }
+    for (int code = 0; code < 256; code++) {
+        if (!current[code]) continue;
+        usb_kbd_repeat[code]++;
+        if (usb_kbd_repeat[code] >= REPEAT_START &&
+            ((usb_kbd_repeat[code] - REPEAT_START) % REPEAT_PERIOD) == 0) {
+            char c = usb_kbd_code_to_char(code);
+            if (c) {
+                serial_puts("xhci: key "); serial_putc(c); serial_puts("\n");
+                kb_buf_push((unsigned char)c);
+            }
+        }
+    }
+}
+
 
 void xhci_setup_hid(volatile uint8_t *cap, uint8_t caplen) {
     (void)caplen;
@@ -136,67 +188,38 @@ int usb_kbd_poll(void) {
     for (int i = 0; i < 8; i++) { serial_hex(new[i]); serial_puts(" "); }
     serial_puts("\n");
 
-    #define REPEAT_START 30
-    #define REPEAT_PERIOD 6
-    static uint8_t usb_kbd_repeat[256];
     uint8_t current[256] = {0};
-
     for (int i = 2; i < 8; i++) {
         uint8_t code = new[i];
         if (code == 0) continue;
         current[code] = 1;
+    }
+
+    for (int i = 2; i < 8; i++) {
+        uint8_t code = new[i];
+        if (code == 0) continue;
 
         int was = 0;
         for (int j = 2; j < 8; j++) {
-            if (prev[j] == code) { was = 1; break; }
+            if (usb_kbd_prev[j] == code) { was = 1; break; }
         }
 
-        if (was) {
-            usb_kbd_repeat[code]++;
-            if (usb_kbd_repeat[code] >= REPEAT_START &&
-                ((usb_kbd_repeat[code] - REPEAT_START) % REPEAT_PERIOD) == 0) {
-                /* repeat; fall through to c lookup */
-            } else {
-                continue;
-            }
-        } else {
+        if (!was) {
             usb_kbd_repeat[code] = 1;
-        }
-
-        char c = 0;
-        if (code >= 0x04 && code <= 0x1d) c = 'a' + (code - 0x04);
-        else if (code >= 0x1e && code <= 0x27) {
-            const char *nums = "1234567890";
-            c = nums[code - 0x1e];
-        } else if (code == 0x28) c = '\n';
-        else if (code == 0x29) c = 0x1b;
-        else if (code == 0x2a) c = '\b';
-        else if (code == 0x2b) c = '\t';
-        else if (code == 0x2c) c = ' ';
-        else if (code == 0x2d) c = '-';
-        else if (code == 0x2e) c = '=';
-        else if (code == 0x2f) c = '[';
-        else if (code == 0x30) c = ']';
-        else if (code == 0x31) c = '\\';
-        else if (code == 0x33) c = ';';
-        else if (code == 0x34) c = '\'';
-        else if (code == 0x35) c = '`';
-        else if (code == 0x36) c = ',';
-        else if (code == 0x37) c = '.';
-        else if (code == 0x38) c = '/';
-
-        if (c) {
-            serial_puts("xhci: key "); serial_putc(c); serial_puts("\n");
-            kb_buf_push((unsigned char)c);
+            char c = usb_kbd_code_to_char(code);
+            if (c) {
+                serial_puts("xhci: key "); serial_putc(c); serial_puts("\n");
+                kb_buf_push((unsigned char)c);
+            }
         }
     }
 
     for (int j = 2; j < 8; j++) {
-        uint8_t code = prev[j];
+        uint8_t code = usb_kbd_prev[j];
         if (code && !current[code]) usb_kbd_repeat[code] = 0;
     }
 
-    for (int i = 0; i < 8; i++) prev[i] = new[i];
+    for (int i = 0; i < 8; i++) usb_kbd_prev[i] = new[i];
 
     /* ustaw cycle tak, żeby pasował do aktualnego DCS kontrolera */
     dcs = xhci_dev_ctx[26] & 1u;

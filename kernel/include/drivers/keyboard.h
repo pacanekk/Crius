@@ -17,6 +17,7 @@ extern int usb_kbd_present;
 
 /* USB keyboard polling hook (implemented in xhci.c) */
 int usb_kbd_poll(void);
+void usb_kbd_tick(void);
 
 /* Device callbacks for /dev/stdin, /dev/kbd */
 int kbd_dev_read(char *buf, size_t bufsize);
