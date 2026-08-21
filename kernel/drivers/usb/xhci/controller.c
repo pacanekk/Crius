@@ -204,7 +204,7 @@ void xhci_init(void) {
         fb_puts("Crius: USB keyboard ready\n", 0x00FFFFFF, 0x00000000);
     }
 
-    if (xhci_cap) xhci_mdelay(xhci_cap, 10000);
+    if (xhci_cap) xhci_mdelay(xhci_cap, 3000);
 }
 
 static void xhci_reset(volatile uint8_t *cap, uint8_t caplen) {
@@ -259,12 +259,12 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
         *portsc = (1u << 9);
 
         int connected = 0;
-        for (int w = 0; w < 20; w++) {
+        for (int w = 0; w < 200; w++) {
             uint32_t sc = *portsc;
             if (sc & (1u << 17))            /* clear CSC */
                 *portsc = (1u << 9) | (1u << 17);
             if (sc & 1u) { connected = 1; break; }
-            xhci_mdelay(cap, 50); /* 50 ms * 20 = 1 s */
+            xhci_mdelay(cap, 10); /* 10 ms * 200 = 2 s */
         }
 
         uint32_t sc = *portsc;
