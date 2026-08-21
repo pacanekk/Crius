@@ -6,7 +6,7 @@ Crius is an x86-64 operating system written in C and assembly, using the [Limine
 
 ## What's included
 
-- **Kernel** (`kernel/`) — 64-bit higher-half kernel with GDT/IDT/APIC, PMM/VMM, scheduler, system calls, VFS, ramfs, ext2, framebuffer console, PS/2 keyboard, serial and IDE block devices.
+- **Kernel** (`kernel/`) — 64-bit higher-half kernel with GDT/IDT/APIC, PMM/VMM, scheduler, system calls, VFS, ramfs, ext2, framebuffer console, PS/2 and USB HID keyboards, serial and IDE block devices.
 - **Nexus** (`nexus/`) — a small userspace with libc, init, shell, coreutils, editor and tests.
 
 ## Quick start

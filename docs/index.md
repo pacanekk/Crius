@@ -111,7 +111,7 @@ Crius uses the Limine boot protocol. The boot files live in `kernel/boot/`.
 5. Initializes the Virtual Memory Manager (`vmm_init`) using the HHDM offset.
 6. Initializes `kmalloc`.
 7. Initializes the scheduler and creates the initial kernel task.
-8. Initializes the framebuffer (`fb_init`), serial (`serial_init`), PS/2 keyboard, and IDE block devices.
+8. Initializes the framebuffer (`fb_init`), serial (`serial_init`), PS/2 keyboard, USB xHCI and HID keyboard, and IDE block devices.
 9. Initializes the VFS (`vfs_init`) and mounts `devfs`, a `ramfs` root, and `procfs`.
 10. Loads the Nexus `init.elf` from the ramfs/initrd or disk and starts userspace execution.
 
@@ -141,6 +141,7 @@ The APIC timer (`kernel/arch/apic.c`) drives `scheduler_tick()` on each interrup
 - **Framebuffer** (`kernel/drivers/fb/`): `fb_draw.c`, `fb_ansi.c`, `fb_dev.c`. The framebuffer console parses ANSI sequences and provides `/dev/stdout` and `/dev/fbinfo`.
 - **Serial** (`kernel/drivers/serial.c`): 16550-compatible serial output, used for `klog`.
 - **PS/2 Keyboard** (`kernel/drivers/keyboard.c`): reads scancode set 1.
+- **USB xHCI and HID Keyboard** (`kernel/drivers/usb/xhci/`, `kernel/drivers/usb/hid/hid.c`): xHCI controller init, port reset, device addressing, HID boot keyboard endpoint setup, and IRQ-driven input with autorepeat.
 - **IDE** (`kernel/drivers/ide.c`): PIO mode IDE driver for PATA devices.
 - **Block Device** (`kernel/drivers/block_device.c`): abstract `struct block_device`; IDE drives and partitions are registered here.
 
@@ -458,6 +459,6 @@ The following limitations are derived from the current implementation:
 - **Scheduling**: simple round-robin with static priorities; no real-time classes or fair-share scheduling.
 - **Networking**: none.
 - **File systems**: ramfs is in-memory only. ext2 support is minimal and does not cover all ext2 feature flags, journal, or full write semantics. There is no permission/ownership model in ramfs.
-- **Devices**: IDE driver uses PIO. AHCI, SATA, USB, and NVMe are not supported.
+- **Devices**: IDE driver uses PIO. AHCI, SATA, and NVMe are not supported. USB xHCI is supported for HID boot keyboards only; other USB devices are not.
 - **Userspace**: libc is intentionally minimal. No shared libraries, no dynamic linker, and no full POSIX compatibility.
 - **Testing**: runtime testing has been done under QEMU only.
