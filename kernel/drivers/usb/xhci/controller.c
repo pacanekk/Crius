@@ -38,6 +38,7 @@ volatile uint8_t *xhci_cap;
 static void xhci_reset(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsparams1);
+static void xhci_ownership_handoff(volatile uint8_t *cap, uint32_t hccparams1);
 uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bRequest, uint16_t wValue, uint16_t wIndex, uint16_t wLength, volatile uint32_t *data, uint64_t data_phys);
 uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bRequest, uint16_t wValue, uint16_t wIndex);
 uint8_t xhci_send_command(volatile uint8_t *cap, uint32_t word0, uint32_t word1, uint32_t word2, uint32_t word3);
@@ -53,6 +54,36 @@ static uint64_t pci_bar_addr(const struct pci_device *d, int bar) {
         return (hi << 32) | addr;
     }
     return addr;
+}
+
+static void xhci_ownership_handoff(volatile uint8_t *cap, uint32_t hccparams1) {
+    uint32_t xecp = (hccparams1 >> 16) & 0xFFFFu;
+    if (!xecp) return;
+
+    uint32_t off = xecp * 4u;
+    while (off && off < 0x1000u) {
+        volatile uint32_t *reg = (volatile uint32_t *)(cap + off);
+        uint32_t dw = *reg;
+        uint8_t id = dw & 0xFFu;
+        uint8_t next = (dw >> 8) & 0xFFu;
+
+        if (id == 1) { /* USB Legacy Support Capability */
+            if (dw & (1u << 16)) { /* HC BIOS Owned Semaphore set */
+                *reg = dw | 1u;      /* request OS ownership */
+                int ok = 0;
+                for (int i = 0; i < 1000000; i++) {
+                    uint32_t v = *reg;
+                    if ((v & (1u << 16)) == 0 && (v & 1u)) { ok = 1; break; }
+                }
+                if (!ok) serial_puts("xhci: bios ownership not released\n");
+                /* disable firmware SMIs */
+                *(volatile uint32_t *)(cap + off + 4) = 0;
+            }
+            break;
+        }
+        if (!next) break;
+        off += next * 4u;
+    }
 }
 
 void xhci_init(void) {
@@ -112,6 +143,7 @@ void xhci_init(void) {
     serial_hex((hccparams1 >> 2) & 1u); serial_puts("\n");
 
     xhci_cap = cap;
+    xhci_ownership_handoff(cap, hccparams1);
     xhci_reset(cap, caplen);
     xhci_setup_and_run(cap, caplen);
 
