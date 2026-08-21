@@ -45,7 +45,7 @@ uint8_t xhci_prep_ep0(volatile uint8_t *cap);
 static uint64_t pci_bar_addr(const struct pci_device *d, int bar) {
     if (bar >= 6) return 0;
     uint32_t lo = d->bars[bar];
-    if (lo & 1) return 0;             /* I/O BAR, nie pamięci */
+    if (lo & 1) return 0;             /* I/O BAR, not memory */
     uint32_t type = lo & 0x6;
     uint32_t addr = lo & ~0xF;
     if (type == 0x4 && (bar + 1) < 6) { /* 64-bit */
@@ -148,13 +148,13 @@ static void xhci_reset(volatile uint8_t *cap, uint8_t caplen) {
     volatile uint32_t *op = (volatile uint32_t *)(cap + caplen);
     int ok = 0;
 
-    /* czekaj, aż kontroler będzie gotowy (CNR = 0) */
+    /* wait until the controller is ready (CNR = 0) */
     for (int i = 0; i < 1000000; i++) {
         if (!(op[1] & (1u << 11))) { ok = 1; break; }
     }
     if (!ok) { serial_puts("xhci: timeout CNR=0\n"); return; }
 
-    /* zatrzymaj, jeśli działa */
+    /* stop if running */
     if (op[0] & 1u) {
         op[0] &= ~1u;
         ok = 0;
@@ -164,7 +164,7 @@ static void xhci_reset(volatile uint8_t *cap, uint8_t caplen) {
         if (!ok) { serial_puts("xhci: timeout HCHalted\n"); return; }
     }
 
-    /* zresetuj */
+    /* reset */
     op[0] = (1u << 1);
     ok = 0;
     for (int i = 0; i < 1000000; i++) {
@@ -172,7 +172,7 @@ static void xhci_reset(volatile uint8_t *cap, uint8_t caplen) {
     }
     if (!ok) { serial_puts("xhci: timeout HCRST\n"); return; }
 
-    /* gotowy po resecie */
+    /* ready after reset */
     ok = 0;
     for (int i = 0; i < 1000000; i++) {
         if (!(op[1] & (1u << 11))) { ok = 1; break; }
@@ -192,7 +192,7 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
     for (int port = 0; port < max_ports; port++) {
         volatile uint32_t *portsc = &op[0x100 + port * 4];
 
-        /* włącz zasilanie portu */
+        /* enable port power */
         *portsc = (1u << 9);
         for (int i = 0; i < 100000; i++)
             __asm__ volatile ("pause");
@@ -202,7 +202,7 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
         serial_hex(port); serial_puts(" sc=");
         serial_hex(sc); serial_puts("\n");
 
-        if (!(sc & 1u)) continue; /* brak urządzenia */
+        if (!(sc & 1u)) continue; /* no device */
 
             if (xhci_device_count < XHCI_MAX_DEVICES) {
             xhci_devices[xhci_device_count].port = port;
@@ -213,7 +213,7 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
         serial_puts("xhci: port ");
         serial_hex(port); serial_puts(" device connected\n");
 
-        /* reset portu */
+        /* reset port */
         *portsc = (1u << 9) | (1u << 4);
         for (int i = 0; i < 10000; i++) __asm__ volatile ("pause");
         uint32_t sc2 = *portsc;
@@ -228,7 +228,7 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
         }
         if (ok) {
             uint32_t s = *portsc;
-            *portsc = (1u << 9) | (1u << 21); /* wyczyść PLC, zostaw zasilanie */
+            *portsc = (1u << 9) | (1u << 21); /* clear PLC, keep power */
             serial_puts("xhci: port ");
             serial_hex(port); serial_puts(" reset done ped=");
             serial_hex((s & (1u << 1)) ? 1 : 0); serial_puts(" pls=");

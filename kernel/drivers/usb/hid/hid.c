@@ -220,7 +220,7 @@ int usb_kbd_poll(void) {
 
     for (int i = 0; i < 8; i++) usb_kbd_prev[i] = new[i];
 
-    /* ustaw cycle tak, żeby pasował do aktualnego DCS kontrolera */
+    /* set cycle to match the current controller DCS */
     dcs = xhci_dev_ctx[26] & 1u;
     ep1_cycle = dcs;
     ep1_tr[0] = (uint32_t)ep1_data_phys;
