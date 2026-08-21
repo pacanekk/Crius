@@ -9,6 +9,7 @@
 #include "arch/idt.h"
 #include "mm/vmm.h"
 #include "mm/pmm.h"
+#include "drivers/framebuffer.h"
 
 extern void irq34(void);
 
@@ -177,6 +178,9 @@ void xhci_init(void) {
     }
     if (!usb_kbd_present) {
         serial_puts("xhci: no keyboard found\n");
+        fb_puts("Crius: no USB keyboard found\n", 0x00FFFFFF, 0x00000000);
+    } else {
+        fb_puts("Crius: USB keyboard ready\n", 0x00FFFFFF, 0x00000000);
     }
 }
 
