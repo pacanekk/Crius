@@ -164,6 +164,7 @@ void xhci_get_device_descriptor(volatile uint8_t *cap, uint8_t caplen) {
     if (data_phys == 0) { serial_puts("xhci: no data page\n"); return; }
     volatile uint32_t *data = (volatile uint32_t *)(vmm_get_hhdm() + data_phys);
     uint8_t cc = xhci_control_in(cap, 0x80, 0x06, 0x0100, 0, 64, data, data_phys);
+    if (xhci_first_dev_cc == 0) xhci_first_dev_cc = cc;
     serial_puts("xhci: get dev desc cc="); serial_hex(cc); serial_puts("\n");
 }
 
@@ -173,6 +174,7 @@ void xhci_get_config_descriptor(volatile uint8_t *cap, uint8_t caplen) {
     if (data_phys == 0) { serial_puts("xhci: no data page\n"); return; }
     volatile uint32_t *data = (volatile uint32_t *)(vmm_get_hhdm() + data_phys);
     uint8_t cc = xhci_control_in(cap, 0x80, 0x06, 0x0200, 0, 64, data, data_phys);
+    if (xhci_first_cfg_cc == 0) xhci_first_cfg_cc = cc;
     serial_puts("xhci: get config desc cc="); serial_hex(cc); serial_puts("\n");
     if (cc != 1 && cc != 13) { serial_puts("xhci: config desc failed\n"); return; }
 

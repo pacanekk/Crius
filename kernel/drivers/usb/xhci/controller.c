@@ -39,6 +39,8 @@ volatile uint8_t *xhci_cap;
 uint8_t xhci_first_if_class = 0;
 uint8_t xhci_first_if_sub = 0;
 uint8_t xhci_first_if_proto = 0;
+uint8_t xhci_first_dev_cc = 0;
+uint8_t xhci_first_cfg_cc = 0;
 static void xhci_reset(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsparams1);
@@ -238,7 +240,11 @@ void xhci_init(void) {
         } else {
             fb_puts("Crius: xHCI ", 0x00FFFFFF, 0x00000000);
             fb_print_hex(xhci_device_count);
-            fb_puts(" devs, class=", 0x00FFFFFF, 0x00000000);
+            fb_puts(" devs, devcc=", 0x00FFFFFF, 0x00000000);
+            fb_print_hex8(xhci_first_dev_cc);
+            fb_puts(" cfgcc=", 0x00FFFFFF, 0x00000000);
+            fb_print_hex8(xhci_first_cfg_cc);
+            fb_puts(" class=", 0x00FFFFFF, 0x00000000);
             fb_print_hex8(xhci_first_if_class);
             fb_putc('/', 0x00FFFFFF, 0x00000000);
             fb_print_hex8(xhci_first_if_sub);
