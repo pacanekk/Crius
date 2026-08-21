@@ -35,6 +35,10 @@ extern uint32_t cmd_cycle;
 extern volatile uint32_t *cmd_ring;
 extern uint64_t cmd_phys;
 
+extern uint8_t xhci_first_if_class;
+extern uint8_t xhci_first_if_sub;
+extern uint8_t xhci_first_if_proto;
+
 extern uint64_t ep0_tr_phys;
 extern volatile uint32_t *ep0_tr;
 extern uint32_t ep0_cycle;

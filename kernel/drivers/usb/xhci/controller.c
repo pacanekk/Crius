@@ -36,6 +36,9 @@ uint8_t xhci_slot_id = 0;
 uint32_t xhci_pspd = 0;
 uint32_t xhci_root_port = 0;
 volatile uint8_t *xhci_cap;
+uint8_t xhci_first_if_class = 0;
+uint8_t xhci_first_if_sub = 0;
+uint8_t xhci_first_if_proto = 0;
 static void xhci_reset(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsparams1);
@@ -91,6 +94,27 @@ static uint32_t xhci_mfindex(volatile uint8_t *cap) {
     uint32_t rts_off = *(volatile uint32_t *)(cap + 0x18);
     volatile uint8_t *rt = cap + (rts_off & ~0x1Fu);
     return *(volatile uint32_t *)(rt + 0x18) & 0x3FFFu;
+}
+
+static void fb_print_hex(uint32_t v) {
+    if (v == 0) { fb_putc('0', 0x00FFFFFF, 0x00000000); return; }
+    int started = 0;
+    for (int i = 28; i >= 0; i -= 4) {
+        uint8_t n = (v >> i) & 0xF;
+        if (n) started = 1;
+        if (started) {
+            char c = n < 10 ? '0' + n : 'a' + n - 10;
+            fb_putc(c, 0x00FFFFFF, 0x00000000);
+        }
+    }
+}
+
+static void fb_print_hex8(uint32_t v) {
+    for (int i = 4; i >= 0; i -= 4) {
+        uint8_t n = (v >> i) & 0xF;
+        char c = n < 10 ? '0' + n : 'a' + n - 10;
+        fb_putc(c, 0x00FFFFFF, 0x00000000);
+    }
 }
 
 static void tsc_calibrate_xhci(volatile uint8_t *cap) {
@@ -209,10 +233,19 @@ void xhci_init(void) {
 
     if (!usb_kbd_present) {
         serial_puts("xhci: no keyboard found\n");
-        if (xhci_device_count == 0)
+        if (xhci_device_count == 0) {
             fb_puts("Crius: no USB devices on xHCI\n", 0x00FFFFFF, 0x00000000);
-        else
-            fb_puts("Crius: xHCI device found, but not a keyboard\n", 0x00FFFFFF, 0x00000000);
+        } else {
+            fb_puts("Crius: xHCI ", 0x00FFFFFF, 0x00000000);
+            fb_print_hex(xhci_device_count);
+            fb_puts(" devs, class=", 0x00FFFFFF, 0x00000000);
+            fb_print_hex8(xhci_first_if_class);
+            fb_putc('/', 0x00FFFFFF, 0x00000000);
+            fb_print_hex8(xhci_first_if_sub);
+            fb_putc('/', 0x00FFFFFF, 0x00000000);
+            fb_print_hex8(xhci_first_if_proto);
+            fb_puts(" not kbd\n", 0x00FFFFFF, 0x00000000);
+        }
     } else {
         fb_puts("Crius: USB keyboard ready\n", 0x00FFFFFF, 0x00000000);
     }

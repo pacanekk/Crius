@@ -203,6 +203,11 @@ void xhci_get_config_descriptor(volatile uint8_t *cap, uint8_t caplen) {
             cur_class = b[i + 5];
             cur_sub = b[i + 6];
             cur_proto = b[i + 7];
+            if (xhci_first_if_class == 0) {
+                xhci_first_if_class = cur_class;
+                xhci_first_if_sub = cur_sub;
+                xhci_first_if_proto = cur_proto;
+            }
             serial_puts("xhci: interface ");
             serial_hex(cur_if); serial_puts(" class=");
             serial_hex(cur_class); serial_puts(" sub=");
