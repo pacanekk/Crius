@@ -469,17 +469,30 @@ The following limitations are derived from the current implementation:
 
 Crius is tested under QEMU with BIOS CD boot by default. Before the first real hardware boot, the following items were added or reviewed:
 
-- **IOAPIC/xHCI INTx routing** (`kernel/arch/apic.c`):
-  - `ioapic_set_redirect()` now reads the existing high/low word, updates only the vector and mask bits, and preserves the firmware-programmed polarity and trigger mode.
-  - `xhci_init()` checks `interrupt_line == 0xFF` and skips IOAPIC programming if the controller reports no INTx routing.
-- **Framebuffer pixel format** (`kernel/drivers/fb/fb_draw.c`):
-  - `fb_init()` now validates `bpp` and supports 24-bit and 32-bit modes. An unsupported `bpp` falls back to no framebuffer and emits a serial warning instead of writing wrong pixel sizes and producing a black screen.
-  - Drawing and scrolling use `pitch * y + x * bytes_per_pixel`, not `pitch / 4`.
-- **No init path** (`kernel/boot/kernel_main.c`):
-  - `userspace_load()` failure prints `kernel: FATAL - failed to load userspace module` and calls `hcf()`.
-- **UEFI media**:
+- **UEFI media and Makefile** (`Makefile`, `docs/index.md`):
   - `crius.iso` already contains both `limine-bios-cd.bin` and `limine-uefi-cd.bin` plus `EFI/BOOT/BOOTX64.EFI`.
+  - Added `make run-uefi OVMF_CODE=/path/to/OVMF.fd` target for UEFI testing in QEMU.
   - Do not assume QEMU BIOS implies UEFI works; test the same ISO on the target UEFI machine or with OVMF before the first physical boot.
+- **ACPI / MADT** (`kernel/arch/apic.c`, `kernel/boot/limine_requests.c`):
+  - Added `LIMINE_RSDP_REQUEST` and `boot_get_rsdp_response()`.
+  - `apic_init()` parses the RSDT/XSDT, finds the MADT, and reads the LAPIC and first I/O APIC physical addresses from ACPI.
+  - Hard-coded `0xFEE00000` / `0xFEC00000` are now fallbacks if ACPI data is missing.
+- **IOAPIC/xHCI INTx routing** (`kernel/arch/apic.c`, `kernel/drivers/usb/xhci/controller.c`):
+  - `ioapic_set_redirect()` preserves the existing high/low word and only sets the vector and unmasks the entry.
+  - `xhci_init()` checks `interrupt_line == 0xFF` and skips IOAPIC programming if the controller reports no INTx routing.
+- **TSS/IST and double fault** (`kernel/arch/gdt.c`, `kernel/arch/idt.c`, `kernel/boot/boot.c`):
+  - Allocated a dedicated 8 KiB IST stack and set `idt_set_gate_ist(8, ..., 1)` for the double-fault handler.
+- **Panic/exception handlers** (`kernel/arch/idt.c`):
+  - All CPU exceptions (including #PF, #GP, #UD, #DF) print the vector name, error code, and RIP, then halt.
+  - Page faults are forwarded to the page-fault handler; userspace exceptions kill the process.
+- **Framebuffer pixel format** (`kernel/drivers/fb/fb_draw.c`):
+  - `fb_init()` validates `bpp` and supports 24-bit and 32-bit modes.
+  - Pixel conversion uses `red/green/blue_mask_size` and `_shift` from Limine, so RGB and BGR framebuffers both produce correct colors.
+  - Drawing and scrolling use `pitch * y + x * bytes_per_pixel`.
+- **PMM / UEFI memory map** (`kernel/mm/pmm.c`):
+  - Only `LIMINE_MEMMAP_USABLE` pages are marked free; all other regions stay reserved.
+- **PCI xHCI detection and ownership handoff** (`kernel/drivers/pci.c`, `kernel/drivers/usb/xhci/controller.c`):
+  - xHCI is located by PCI class/subclass/prog_if; the driver stops the controller, resets it (`HCRST`), then builds the command/event rings before running.
 
 What is still not supported on real hardware:
 
