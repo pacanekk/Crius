@@ -121,7 +121,8 @@ void boot_early_init(void) {
     idt_load();
     apic_init(boot_get_hhdm_response()->offset,
               boot_get_exec_addr_response()->physical_base,
-              boot_get_exec_addr_response()->virtual_base);
+              boot_get_exec_addr_response()->virtual_base,
+              boot_get_rsdp_response());
 
     pmm_init(boot_get_memmap_response());
     kmalloc_init(boot_get_hhdm_response()->offset);

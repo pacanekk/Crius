@@ -35,6 +35,12 @@ static volatile struct limine_module_request module_request = {
     .revision = 0
 };
 
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_rsdp_request rsdp_request = {
+    .id = LIMINE_RSDP_REQUEST_ID,
+    .revision = 0
+};
+
 __attribute__((used, section(".limine_requests_start")))
 static volatile uint64_t limine_requests_start_marker[] = LIMINE_REQUESTS_START_MARKER;
 
@@ -56,6 +62,9 @@ struct limine_memmap_response *boot_get_memmap_response(void) {
 }
 struct limine_module_response *boot_get_module_response(void) {
     return module_request.response;
+}
+struct limine_rsdp_response *boot_get_rsdp_response(void) {
+    return rsdp_request.response;
 }
 const volatile uint64_t *boot_get_base_revision(void) {
     return limine_base_revision;

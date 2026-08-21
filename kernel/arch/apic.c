@@ -108,16 +108,88 @@ static uint64_t map_mmio(uint64_t phys) {
     return virt;
 }
 
-void apic_init(uint64_t hhdm_offset_param, uint64_t phys_base, uint64_t virt_base) {
+static uint64_t acpi_u64(const uint8_t *p) {
+    uint64_t v = 0;
+    for (int i = 0; i < 8; i++) v |= ((uint64_t)p[i]) << (i * 8);
+    return v;
+}
+
+static uint32_t acpi_u32(const uint8_t *p) {
+    uint32_t v = 0;
+    for (int i = 0; i < 4; i++) v |= ((uint32_t)p[i]) << (i * 8);
+    return v;
+}
+
+static uint64_t acpi_find_madt(struct limine_rsdp_response *rsdp_resp) {
+    if (!rsdp_resp || !rsdp_resp->address) return 0;
+    const uint8_t *rsdp = (const uint8_t *)rsdp_resp->address;
+    uint8_t rev = rsdp[15];
+    uint64_t root_phys = 0;
+    if (rev >= 2) {
+        root_phys = acpi_u64(rsdp + 24);
+    } else {
+        root_phys = acpi_u32(rsdp + 16);
+    }
+    if (!root_phys) return 0;
+    const uint8_t *root = (const uint8_t *)(hhdm_offset + root_phys);
+    uint32_t root_len = acpi_u32(root + 4);
+    uint32_t entry_off = 36; /* header length */
+    uint32_t ptr_size = (rev >= 2) ? 8 : 4;
+    while (entry_off + ptr_size <= root_len) {
+        uint64_t entry_phys = 0;
+        if (rev >= 2)
+            entry_phys = acpi_u64(root + entry_off);
+        else
+            entry_phys = acpi_u32(root + entry_off);
+        if (entry_phys) {
+            const uint8_t *sdt = (const uint8_t *)(hhdm_offset + entry_phys);
+            if (sdt[0] == 'A' && sdt[1] == 'P' && sdt[2] == 'I' && sdt[3] == 'C')
+                return entry_phys;
+        }
+        entry_off += ptr_size;
+    }
+    return 0;
+}
+
+static void acpi_parse_madt(uint64_t madt_phys, uint64_t *lapic, uint64_t *ioapic) {
+    const uint8_t *madt = (const uint8_t *)(hhdm_offset + madt_phys);
+    uint32_t madt_len = acpi_u32(madt + 4);
+    if (lapic) *lapic = acpi_u32(madt + 36);
+    if (ioapic) *ioapic = 0;
+
+    uint32_t off = 44;
+    while (off + 2 <= madt_len) {
+        uint8_t type = madt[off];
+        uint8_t len = madt[off + 1];
+        if (len == 0 || off + len > madt_len) break;
+        if (type == 1 && ioapic && len >= 12) {
+            *ioapic = acpi_u32(madt + off + 4);
+        } else if (type == 5 && len >= 12 && lapic) {
+            *lapic = acpi_u64(madt + off + 4);
+        }
+        off += len;
+    }
+}
+
+void apic_init(uint64_t hhdm_offset_param, uint64_t phys_base, uint64_t virt_base,
+               struct limine_rsdp_response *rsdp_resp) {
     hhdm_offset = hhdm_offset_param;
     kern_phys_base = phys_base;
     kern_virt_base = virt_base;
 
+    uint64_t lapic_phys = 0, ioapic_phys = 0;
+    uint64_t madt_phys = acpi_find_madt(rsdp_resp);
+    if (madt_phys) {
+        acpi_parse_madt(madt_phys, &lapic_phys, &ioapic_phys);
+    }
+    if (!lapic_phys) lapic_phys = LAPIC_PHYS;
+    if (!ioapic_phys) ioapic_phys = IOAPIC_PHYS;
+
     outb(0x21, 0xFF);
     outb(0xA1, 0xFF);
 
-    lapic_base  = map_mmio(LAPIC_PHYS);
-    ioapic_base = map_mmio(IOAPIC_PHYS);
+    lapic_base  = map_mmio(lapic_phys);
+    ioapic_base = map_mmio(ioapic_phys);
 
     uint32_t eax, edx;
     __asm__ volatile ("rdmsr" : "=a"(eax), "=d"(edx) : "c"(0x1B));
