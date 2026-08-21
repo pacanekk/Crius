@@ -3,6 +3,7 @@
 #include "drivers/serial.h"
 #include "drivers/pci.h"
 #include "drivers/xhci.h"
+#include "drivers/keyboard.h"
 #include "xhci_internal.h"
 #include "mm/vmm.h"
 #include "mm/pmm.h"
@@ -10,6 +11,16 @@
 #define XHCI_CLASS      0x0C
 #define XHCI_SUBCLASS   0x03
 #define XHCI_PROG_IF    0x30
+
+#define XHCI_MAX_DEVICES 8
+
+struct xhci_device_info {
+    int port;
+    uint32_t sc;
+};
+
+static struct xhci_device_info xhci_devices[XHCI_MAX_DEVICES];
+static int xhci_device_count = 0;
 
 uint64_t *xhci_dcbaap;
 volatile uint32_t *xhci_dev_ctx;
@@ -99,12 +110,25 @@ void xhci_init(void) {
     xhci_reset(cap, caplen);
     xhci_setup_and_run(cap, caplen);
     xhci_ports_init(cap, caplen, hcsparams1);
-    xhci_slot_id = xhci_enable_slot(cap);
-    if (xhci_slot_id && xhci_address_device(cap, caplen)) {
+
+    xhci_slot_id = 0;
+    for (int i = 0; i < xhci_device_count; i++) {
+        xhci_connected_port = xhci_devices[i].port;
+        xhci_portsc = xhci_devices[i].sc;
+        uint8_t slot = xhci_enable_slot(cap);
+        if (!slot) continue;
+        xhci_slot_id = slot;
+        if (!xhci_address_device(cap, caplen)) continue;
         xhci_get_device_descriptor(cap, caplen);
         xhci_get_config_descriptor(cap, caplen);
-        xhci_setup_hid(cap, caplen);
-        xhci_configure_hid(cap, caplen);
+        if (ep1_id != 0 && ep1_ifnum != 0xFF) {
+            xhci_setup_hid(cap, caplen);
+            xhci_configure_hid(cap, caplen);
+            if (usb_kbd_present) break;
+        }
+    }
+    if (!usb_kbd_present) {
+        serial_puts("xhci: no keyboard found\n");
     }
 }
 
@@ -168,11 +192,11 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
 
         if (!(sc & 1u)) continue; /* brak urządzenia */
 
-        xhci_connected_port = port;
-        xhci_portsc = sc;
-
-        xhci_connected_port = port;
-        xhci_portsc = sc;
+            if (xhci_device_count < XHCI_MAX_DEVICES) {
+            xhci_devices[xhci_device_count].port = port;
+            xhci_devices[xhci_device_count].sc = sc;
+            xhci_device_count++;
+        }
 
         serial_puts("xhci: port ");
         serial_hex(port); serial_puts(" device connected\n");

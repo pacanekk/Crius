@@ -15,15 +15,16 @@ uint64_t ep1_data_phys;
 volatile uint8_t *ep1_data;
 uint16_t ep1_maxpkt = 8;
 uint8_t ep1_interval = 10;
-uint8_t ep1_num = 1;
-uint8_t ep1_id = 3;
-uint8_t ep1_ifnum = 0;
+uint8_t ep1_num = 0;
+uint8_t ep1_id = 0;
+uint8_t ep1_ifnum = 0xFF;
 
 
 void xhci_setup_hid(volatile uint8_t *cap, uint8_t caplen) {
     (void)caplen;
     uint8_t cc;
 
+    if (ep1_id == 0 || ep1_ifnum == 0xFF) return;
     if (xhci_prep_ep0(cap) != 1) return;
     cc = xhci_control_out(cap, 0x00, 0x09, 1, 0); /* SET_CONFIGURATION */
     serial_puts("xhci: set config cc="); serial_hex(cc); serial_puts("\n");
@@ -51,7 +52,7 @@ void xhci_setup_hid(volatile uint8_t *cap, uint8_t caplen) {
 
 void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen) {
     (void)caplen;
-    if (xhci_slot_id == 0) return;
+    if (xhci_slot_id == 0 || ep1_id == 0) return;
 
     uint64_t in_ctx_phys = pmm_alloc_page();
     if (in_ctx_phys == 0) { serial_puts("xhci: no in ctx cfg\n"); return; }

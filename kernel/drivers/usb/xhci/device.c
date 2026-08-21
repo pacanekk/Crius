@@ -176,10 +176,14 @@ void xhci_get_config_descriptor(volatile uint8_t *cap, uint8_t caplen) {
 
     volatile uint8_t *b = (volatile uint8_t *)data;
     uint16_t wTotalLength = (uint16_t)(b[2] | (b[3] << 8));
+    if (wTotalLength > 64) {
+        if (wTotalLength > 4096) wTotalLength = 4096;
+        cc = xhci_control_in(cap, 0x80, 0x06, 0x0200, 0, wTotalLength, data, data_phys);
+        if (cc != 1) { serial_puts("xhci: full config desc failed\n"); return; }
+    }
     uint8_t bNumInterfaces = b[4];
     uint8_t bConfigurationValue = b[5];
-    serial_puts("xhci: cfg wTotalLength="); serial_hex(wTotalLength);
-    serial_puts(" bNumInterfaces="); serial_hex(bNumInterfaces);
+    serial_puts("xhci: cfg wTotalLength="); serial_hex(wTotalLength);    serial_puts(" bNumInterfaces="); serial_hex(bNumInterfaces);
     serial_puts(" bConfigurationValue="); serial_hex(bConfigurationValue); serial_puts("\n");
 
     uint8_t cur_if = 0, cur_class = 0, cur_sub = 0, cur_proto = 0;
