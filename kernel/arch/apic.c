@@ -51,7 +51,7 @@ static uint64_t hhdm_offset;
 static uint64_t kern_phys_base;
 static uint64_t kern_virt_base;
 
-static uint64_t tsc_read(void) {
+uint64_t tsc_read(void) {
     uint32_t lo, hi;
     __asm__ volatile ("rdtsc" : "=a"(lo), "=d"(hi));
     return ((uint64_t)hi << 32) | lo;

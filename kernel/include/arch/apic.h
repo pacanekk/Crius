@@ -14,5 +14,6 @@ extern uint32_t apic_per_tick;
 
 extern uint64_t tsc_per_ms;
 void tsc_mdelay(uint32_t ms);
+uint64_t tsc_read(void);
 
 #endif

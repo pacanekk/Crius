@@ -93,9 +93,22 @@ static uint32_t xhci_mfindex(volatile uint8_t *cap) {
     return *(volatile uint32_t *)(rt + 0x18) & 0x3FFFu;
 }
 
+static void tsc_calibrate_xhci(volatile uint8_t *cap) {
+    if (tsc_per_ms) return;
+    uint32_t start = xhci_mfindex(cap);
+    uint64_t t0 = tsc_read();
+    while (((xhci_mfindex(cap) - start) & 0x3FFFu) < 80)
+        __asm__ volatile ("pause");
+    uint64_t t1 = tsc_read();
+    tsc_per_ms = (t1 - t0) / 10;
+    if (tsc_per_ms == 0) tsc_per_ms = 1;
+    serial_puts("xhci: tsc_per_ms=");
+    serial_hex((uint32_t)tsc_per_ms); serial_puts("\n");
+}
+
 static void xhci_mdelay(volatile uint8_t *cap, uint32_t ms) {
-    (void)cap;
-    apic_mdelay(ms);
+    tsc_calibrate_xhci(cap);
+    tsc_mdelay(ms);
 }
 
 void xhci_init(void) {
@@ -259,12 +272,12 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
         *portsc = (1u << 9);
 
         int connected = 0;
-        for (int w = 0; w < 200; w++) {
+        for (int w = 0; w < 20; w++) {
             uint32_t sc = *portsc;
             if (sc & (1u << 17))            /* clear CSC */
                 *portsc = (1u << 9) | (1u << 17);
             if (sc & 1u) { connected = 1; break; }
-            xhci_mdelay(cap, 10); /* 10 ms * 200 = 2 s */
+            xhci_mdelay(cap, 10); /* 10 ms * 20 = 200 ms */
         }
 
         uint32_t sc = *portsc;
