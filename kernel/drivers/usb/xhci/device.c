@@ -94,7 +94,8 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     in_ctx[1] = 0x3; /* add slot and EP0 contexts */
     /* slot context at offset 0x20, index 8 */
     in_ctx[8] = (pspd << 20) | (1u << 27); /* speed, context entries = 1 */
-    in_ctx[9] = (root_port & 0xFF) << 16;
+    in_ctx[9] = ((root_port & 0xFF) << 16);
+    in_ctx[11] = (uint32_t)xhci_slot_id; /* USB device address */
     /* EP0 context at offset 0x40, index 16 */
     in_ctx[16] = 0; /* EP0 dword0: state etc. */
     in_ctx[17] = ((max_pkt & 0x7FFF) << 16) | (4u << 3) | (3u << 1); /* max packet, EP type control, CErr=3 */

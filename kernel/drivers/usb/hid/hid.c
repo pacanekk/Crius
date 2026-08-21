@@ -125,6 +125,7 @@ void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen) {
     in_ctx[1] = 1u | (1u << (uint32_t)ep1_id); /* add slot and selected EP contexts */
     in_ctx[8] = (xhci_pspd << 20) | ((uint32_t)ep1_id << 27);
     in_ctx[9] = (xhci_root_port & 0xFF) << 16;
+    in_ctx[11] = (uint32_t)xhci_slot_id; /* USB device address */
     in_ctx[ep_base + 0] = (uint32_t)ep1_interval << 16;
     in_ctx[ep_base + 1] = (7u << 3) | (3u << 1) | ((uint32_t)ep1_maxpkt << 16);
     in_ctx[ep_base + 2] = (uint32_t)(ep1_tr_phys | 1);
