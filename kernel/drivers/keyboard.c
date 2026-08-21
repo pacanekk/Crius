@@ -105,6 +105,7 @@ char kb_read(void) {
 
 void irq_handler(uint64_t vector) {
     if (vector == 32) {
+        if (usb_kbd_present) usb_kbd_poll();
         scheduler_tick();
         apic_eoi();
         return;
@@ -127,11 +128,6 @@ int kbd_dev_read(char *buf, size_t bufsize) {
     for (;;) {
         unsigned char c = kb_buf_pop();
         if (c) { buf[0] = (char)c; return 1; }
-        if (usb_kbd_present) {
-            usb_kbd_poll();
-            c = kb_buf_pop();
-            if (c) { buf[0] = (char)c; return 1; }
-        }
         __asm__ volatile ("sti; hlt");
     }
 }
