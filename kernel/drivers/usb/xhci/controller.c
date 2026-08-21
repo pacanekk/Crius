@@ -212,7 +212,10 @@ void xhci_init(void) {
 
     if (!usb_kbd_present) {
         serial_puts("xhci: no keyboard found\n");
-        fb_puts("Crius: no USB keyboard found\n", 0x00FFFFFF, 0x00000000);
+        if (xhci_device_count == 0)
+            fb_puts("Crius: no USB devices on xHCI\n", 0x00FFFFFF, 0x00000000);
+        else
+            fb_puts("Crius: xHCI device found, but not a keyboard\n", 0x00FFFFFF, 0x00000000);
     } else {
         fb_puts("Crius: USB keyboard ready\n", 0x00FFFFFF, 0x00000000);
     }
@@ -272,12 +275,12 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
         *portsc = (1u << 9);
 
         int connected = 0;
-        for (int w = 0; w < 10; w++) {
+        for (int w = 0; w < 20; w++) {
             uint32_t sc = *portsc;
             if (sc & (1u << 17))            /* clear CSC */
                 *portsc = (1u << 9) | (1u << 17);
             if (sc & 1u) { connected = 1; break; }
-            xhci_mdelay(cap, 50); /* 50 ms * 10 = 500 ms */
+            xhci_mdelay(cap, 50); /* 50 ms * 20 = 1 s */
         }
 
         uint32_t sc = *portsc;
@@ -298,17 +301,16 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
 
         /* port reset */
         *portsc = (1u << 9) | (1u << 4);
-        for (int i = 0; i < 10000; i++) __asm__ volatile ("pause");
+        int ok = 0;
+        for (int r = 0; r < 50; r++) {
+            uint32_t s = *portsc;
+            if (!(s & (1u << 4)) && (s & (1u << 1))) { ok = 1; break; }
+            xhci_mdelay(cap, 2); /* 2 ms * 50 = 100 ms */
+        }
         uint32_t sc2 = *portsc;
         serial_puts("xhci: port ");
         serial_hex(port); serial_puts(" after pr sc=");
         serial_hex(sc2); serial_puts("\n");
-
-        int ok = 0;
-        for (int i = 0; i < 10000000; i++) {
-            uint32_t s = *portsc;
-            if (!(s & (1u << 4)) && (s & (1u << 1))) { ok = 1; break; }
-        }
         if (ok) {
             uint32_t s = *portsc;
             *portsc = (1u << 9) | (1u << 21); /* clear PLC, keep power */
