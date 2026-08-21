@@ -85,7 +85,7 @@ void xhci_setup_hid(volatile uint8_t *cap, uint8_t caplen) {
     if (xhci_prep_ep0(cap) != 1) return;
     cc = xhci_control_out(cap, 0x21, 0x0B, 0, ep1_ifnum); /* SET_PROTOCOL (boot) */
     serial_puts("xhci: set protocol cc="); serial_hex(cc); serial_puts("\n");
-    if (cc != 1) return;
+    if (cc != 1) serial_puts("xhci: set protocol not supported, continuing\n");
 
     if (xhci_prep_ep0(cap) != 1) return;
     cc = xhci_control_out(cap, 0x21, 0x0A, 0, ep1_ifnum); /* SET_IDLE (duration=0) */
@@ -159,22 +159,26 @@ int usb_kbd_poll(void) {
     if (!xhci_slot_id || !ep1_tr || !event_ring || !xhci_cap) return 0;
 
     int e = xhci_event_idx;
-    uint32_t ev3 = event_ring[e * 4 + 3];
-    uint8_t type = (uint8_t)((ev3 >> 10) & 0x3F);
-    if (type != 32) return 0;
-
-    uint8_t slot = (uint8_t)(ev3 >> 24);
-    uint8_t ep = (uint8_t)((ev3 >> 16) & 0x1F);
-    uint32_t ev2 = event_ring[e * 4 + 2];
-    uint8_t cc = (uint8_t)(ev2 >> 24);
-    if (slot != xhci_slot_id) return 0;
-
-    xhci_advance_event(e);
-
-    if (ep != ep1_id || (cc != 1 && cc != 6)) {
-        serial_puts("xhci: report ep="); serial_hex(ep);
-        serial_puts(" cc="); serial_hex(cc); serial_puts("\n");
-        return 0;
+    for (int attempts = 0; attempts < 256; attempts++) {
+        uint32_t ev3 = event_ring[e * 4 + 3];
+        uint8_t type = (uint8_t)((ev3 >> 10) & 0x3F);
+        if (type == 0) return 0;
+        uint8_t slot = (uint8_t)(ev3 >> 24);
+        uint8_t ep = (uint8_t)((ev3 >> 16) & 0x1F);
+        uint32_t ev2 = event_ring[e * 4 + 2];
+        uint8_t cc = (uint8_t)(ev2 >> 24);
+        if (type != 32 || slot != xhci_slot_id) {
+            xhci_advance_event(e);
+            e = xhci_event_idx;
+            continue;
+        }
+        xhci_advance_event(e);
+        if (ep != ep1_id || (cc != 1 && cc != 6)) {
+            serial_puts("xhci: report ep="); serial_hex(ep);
+            serial_puts(" cc="); serial_hex(cc); serial_puts("\n");
+            return 0;
+        }
+        break;
     }
 
     uint8_t new[8];

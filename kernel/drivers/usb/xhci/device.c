@@ -191,7 +191,9 @@ void xhci_get_config_descriptor(volatile uint8_t *cap, uint8_t caplen) {
     serial_puts(" bConfigurationValue="); serial_hex(bConfigurationValue); serial_puts("\n");
 
     uint8_t cur_if = 0, cur_class = 0, cur_sub = 0, cur_proto = 0;
-    int got = 0;
+    int got = 0, fb_id = 0;
+    uint8_t fb_num = 0, fb_if = 0xFF, fb_interval = 0;
+    uint16_t fb_maxpkt = 0;
     for (uint16_t i = 0; i + 1 < wTotalLength;) {
         uint8_t len = b[i];
         uint8_t type = b[i + 1];
@@ -214,9 +216,10 @@ void xhci_get_config_descriptor(volatile uint8_t *cap, uint8_t caplen) {
         } else if (type == 5) {
             uint16_t max_pkt = (uint16_t)(b[i + 4] | (b[i + 5] << 8));
             uint8_t ep_addr = b[i + 2];
+            uint8_t attr = b[i + 3];
             serial_puts("xhci: ep addr=");
             serial_hex(ep_addr); serial_puts(" attr=");
-            serial_hex(b[i + 3]); serial_puts(" maxpkt=");
+            serial_hex(attr); serial_puts(" maxpkt=");
             serial_hex(max_pkt); serial_puts("\n");
             if ((ep_addr & 0x80u) && !got &&
                 cur_class == 0x03u && cur_sub == 0x01u && cur_proto == 0x01u) {
@@ -234,9 +237,31 @@ void xhci_get_config_descriptor(volatile uint8_t *cap, uint8_t caplen) {
                 serial_puts(" id="); serial_hex(ep1_id);
                 serial_puts(" interval="); serial_hex(ep1_interval);
                 serial_puts("\n");
+            } else if ((ep_addr & 0x80u) && !got && !fb_id &&
+                       cur_class == 0x03u && (attr & 0x03u) == 0x03u) {
+                fb_num = ep_addr & 0x0Fu;
+                fb_id = (fb_num << 1) + 1;
+                fb_maxpkt = max_pkt;
+                fb_if = cur_if;
+                uint8_t usbiv = b[i + 6];
+                uint32_t target = (uint32_t)usbiv * 8;
+                uint8_t xiv = 0;
+                while (((1u << xiv) < target) && xiv < 31) xiv++;
+                fb_interval = xiv;
+                serial_puts("xhci: fallback ep num="); serial_hex(fb_num);
+                serial_puts(" id="); serial_hex(fb_id);
+                serial_puts("\n");
             }
         }
         i += len;
+    }
+    if (!got && fb_id) {
+        ep1_num = fb_num;
+        ep1_id = fb_id;
+        ep1_maxpkt = fb_maxpkt;
+        ep1_ifnum = fb_if;
+        ep1_interval = fb_interval;
+        serial_puts("xhci: using non-boot HID fallback\n");
     }
 }
 

@@ -182,6 +182,9 @@ void xhci_init(void) {
     } else {
         fb_puts("Crius: USB keyboard ready\n", 0x00FFFFFF, 0x00000000);
     }
+
+    for (volatile uint64_t i = 0; i < 0x2000000ULL; i++)
+        __asm__ volatile ("pause");
 }
 
 static void xhci_reset(volatile uint8_t *cap, uint8_t caplen) {
@@ -234,15 +237,22 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
 
         /* enable port power */
         *portsc = (1u << 9);
-        for (int i = 0; i < 100000; i++)
+
+        int connected = 0;
+        for (int i = 0; i < 500000; i++) {
+            uint32_t sc = *portsc;
+            if (sc & (1u << 17))            /* clear CSC */
+                *portsc = (1u << 9) | (1u << 17);
+            if (sc & 1u) { connected = 1; break; }
             __asm__ volatile ("pause");
+        }
 
         uint32_t sc = *portsc;
         serial_puts("xhci: port ");
         serial_hex(port); serial_puts(" sc=");
         serial_hex(sc); serial_puts("\n");
 
-        if (!(sc & 1u)) continue; /* no device */
+        if (!connected) continue; /* no device */
 
             if (xhci_device_count < XHCI_MAX_DEVICES) {
             xhci_devices[xhci_device_count].port = port;
