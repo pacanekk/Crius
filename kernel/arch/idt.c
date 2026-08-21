@@ -20,10 +20,14 @@ static const char *exception_names[] = {
 };
 
 void idt_set_gate(int vector, void *handler, uint8_t type_attr) {
+    idt_set_gate_ist(vector, handler, type_attr, 0);
+}
+
+void idt_set_gate_ist(int vector, void *handler, uint8_t type_attr, uint8_t ist) {
     uint64_t addr = (uint64_t)handler;
     idt[vector].offset_low  = addr & 0xFFFF;
     idt[vector].selector    = 0x08;
-    idt[vector].ist         = 0;
+    idt[vector].ist         = ist & 0x7;
     idt[vector].type_attr   = type_attr;
     idt[vector].offset_mid  = (addr >> 16) & 0xFFFF;
     idt[vector].offset_high = (addr >> 32) & 0xFFFFFFFF;

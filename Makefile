@@ -67,9 +67,14 @@ crius.iso: kernel nexus $(LIMINE_DIR) limine.conf
 		$(ISO_DIR) -o crius.iso
 	$(LIMINE_DEPLOY) bios-install crius.iso
 
-# Run in QEMU
+# Run in QEMU (BIOS)
 run: crius.iso disk.img
 	qemu-system-x86_64 -cpu Haswell,+smap -m 512M -cdrom crius.iso -drive format=raw,file=disk.img -boot d
+
+# Run in QEMU (UEFI) -- requires OVMF installed (e.g. /usr/share/edk2-ovmf/x64/OVMF_CODE.4m.fd)
+OVMF_CODE ?= /usr/share/edk2-ovmf/x64/OVMF_CODE.4m.fd
+run-uefi: crius.iso disk.img
+	qemu-system-x86_64 -m 512M -bios $(OVMF_CODE) -cdrom crius.iso -drive format=raw,file=disk.img -boot d
 
 disk.img:
 	dd if=/dev/zero of=disk.img bs=1M count=64 2>/dev/null

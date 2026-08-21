@@ -21,5 +21,6 @@ struct idt_ptr {
 void idt_init(void);
 void idt_load(void);
 void idt_set_gate(int vector, void *handler, uint8_t type_attr);
+void idt_set_gate_ist(int vector, void *handler, uint8_t type_attr, uint8_t ist);
 
 #endif

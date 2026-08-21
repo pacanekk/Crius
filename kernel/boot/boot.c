@@ -107,7 +107,10 @@ void boot_early_init(void) {
     idt_init();
 
     for (int i = 0; i < 32; i++) {
-        idt_set_gate(i, isr_table[i], 0x8E);
+        if (i == 8)
+            idt_set_gate_ist(i, isr_table[i], 0x8E, 1);
+        else
+            idt_set_gate(i, isr_table[i], 0x8E);
     }
     for (int i = 0; i < 16; i++) {
         idt_set_gate(32 + i, irq_table[i], 0x8E);

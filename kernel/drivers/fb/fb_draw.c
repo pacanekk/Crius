@@ -25,30 +25,69 @@ void fb_init(struct limine_framebuffer *framebuffer) {
     }
 }
 
+static uint32_t fb_color_to_pixel(uint32_t color) {
+    if (!fb) return 0;
+    uint8_t r = (color >> 16) & 0xFF;
+    uint8_t g = (color >> 8) & 0xFF;
+    uint8_t b = color & 0xFF;
+    uint32_t pixel = 0;
+    if (fb->red_mask_size)
+        pixel |= (((uint32_t)r >> (8 - fb->red_mask_size)) << fb->red_mask_shift);
+    if (fb->green_mask_size)
+        pixel |= (((uint32_t)g >> (8 - fb->green_mask_size)) << fb->green_mask_shift);
+    if (fb->blue_mask_size)
+        pixel |= (((uint32_t)b >> (8 - fb->blue_mask_size)) << fb->blue_mask_shift);
+    return pixel;
+}
+
+static uint32_t fb_pixel_to_color(uint32_t pixel) {
+    if (!fb) return 0;
+    uint32_t r = 0, g = 0, b = 0;
+    uint32_t mask;
+    if (fb->red_mask_size) {
+        mask = (1u << fb->red_mask_size) - 1;
+        r = (pixel >> fb->red_mask_shift) & mask;
+        r <<= (8 - fb->red_mask_size);
+    }
+    if (fb->green_mask_size) {
+        mask = (1u << fb->green_mask_size) - 1;
+        g = (pixel >> fb->green_mask_shift) & mask;
+        g <<= (8 - fb->green_mask_size);
+    }
+    if (fb->blue_mask_size) {
+        mask = (1u << fb->blue_mask_size) - 1;
+        b = (pixel >> fb->blue_mask_shift) & mask;
+        b <<= (8 - fb->blue_mask_size);
+    }
+    return (r << 16) | (g << 8) | b;
+}
+
 static uint32_t fb_get_pixel(int x, int y) {
     if (!fb) return 0;
     uint8_t *ptr = (uint8_t *)fb->address;
     if (fb->bpp == 32) {
         uint32_t *p = (uint32_t *)(ptr + y * fb->pitch + x * 4);
-        return *p;
+        return fb_pixel_to_color(*p);
     } else if (fb->bpp == 24) {
         uint8_t *p = ptr + y * fb->pitch + x * 3;
-        return p[0] | (p[1] << 8) | (p[2] << 16);
+        uint32_t pixel = p[0] | (p[1] << 8) | (p[2] << 16);
+        return fb_pixel_to_color(pixel);
     }
     return 0;
 }
 
 static void fb_draw_pixel(int x, int y, uint32_t color) {
     if (!fb) return;
+    uint32_t pixel = fb_color_to_pixel(color);
     uint8_t *ptr = (uint8_t *)fb->address;
     if (fb->bpp == 32) {
         uint32_t *p = (uint32_t *)(ptr + y * fb->pitch + x * 4);
-        *p = color;
+        *p = pixel;
     } else if (fb->bpp == 24) {
         uint8_t *p = ptr + y * fb->pitch + x * 3;
-        p[0] = color & 0xFF;
-        p[1] = (color >> 8) & 0xFF;
-        p[2] = (color >> 16) & 0xFF;
+        p[0] = pixel & 0xFF;
+        p[1] = (pixel >> 8) & 0xFF;
+        p[2] = (pixel >> 16) & 0xFF;
     }
 }
 

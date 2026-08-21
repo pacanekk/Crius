@@ -20,6 +20,8 @@ static struct gdt_entry gdt[7];
 static struct gdt_ptr gdtr;
 static struct tss tss;
 
+static uint8_t df_ist_stack[8192] __attribute__((aligned(16)));
+
 static void set_gate(int idx, uint8_t access, uint8_t flags) {
     gdt[idx].limit_low  = 0;
     gdt[idx].base_low   = 0;
@@ -49,6 +51,7 @@ void gdt_init(void) {
     set_gate(4, 0xFA, 0xA0);  /* L=1, present, executable, ring 3 */
 
     /* Index 5: TSS (selector 0x28) - 16-byte system descriptor */
+    tss.ist[0] = (uint64_t)(df_ist_stack + sizeof(df_ist_stack));
     uint64_t tss_addr = (uint64_t)&tss;
     gdt[5].limit_low  = sizeof(struct tss) - 1;
     gdt[5].base_low   = tss_addr & 0xFFFF;
