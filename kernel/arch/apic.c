@@ -1,5 +1,7 @@
 #include <stdint.h>
+#include <stdbool.h>
 #include "arch/apic.h"
+#include "arch/cpu.h"
 #include "arch/io.h"
 
 #define LAPIC_PHYS  0xFEE00000UL
@@ -9,6 +11,8 @@
 
 static uint64_t lapic_base;
 static uint64_t ioapic_base;
+
+uint32_t apic_per_tick = 0;
 
 #define LAPIC_REG(reg) (*(volatile uint32_t *)(lapic_base + (reg)))
 #define LAPIC_EOI        0xB0
@@ -225,15 +229,27 @@ void apic_init(uint64_t hhdm_offset_param, uint64_t phys_base, uint64_t virt_bas
     outb(0x61, gate & ~0x01);          /* disable channel 2 gate, restore */
 
     /* per_tick = APIC ticks per 1ms */
-    uint32_t per_tick = elapsed / 10;
+    apic_per_tick = elapsed / 10;
 
     /* Timer fires every 1ms (periodic mode) */
     LAPIC_REG(LAPIC_LVT_TIMER) = 0x20 | (1 << 17);
     LAPIC_REG(LAPIC_TIMER_DIV) = 0x3;
-    LAPIC_REG(LAPIC_TIMER_INIT) = per_tick;
+    LAPIC_REG(LAPIC_TIMER_INIT) = apic_per_tick;
 }
 
 void apic_eoi(void) {
     LAPIC_REG(LAPIC_EOI) = 0;
+}
+
+void apic_mdelay(uint32_t ms) {
+    if (apic_per_tick == 0) {
+        for (volatile uint64_t i = 0; i < (uint64_t)ms * 0x40000ULL; i++)
+            __asm__ volatile ("pause");
+        return;
+    }
+    uint32_t start = LAPIC_REG(LAPIC_TIMER_CUR);
+    uint32_t target = apic_per_tick * ms;
+    while (((start - LAPIC_REG(LAPIC_TIMER_CUR)) & 0xFFFFFFFFu) < target)
+        __asm__ volatile ("pause");
 }
 

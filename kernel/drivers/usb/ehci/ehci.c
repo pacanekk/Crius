@@ -37,8 +37,7 @@ static volatile uint32_t *ehci_op = NULL;
 static volatile uint8_t *ehci_cap = NULL;
 
 static void ehci_mdelay(uint32_t ms) {
-    for (volatile uint64_t i = 0; i < (uint64_t)ms * 0x20000ULL; i++)
-        __asm__ volatile ("pause");
+    apic_mdelay(ms);
 }
 
 void ehci_init(void) {
