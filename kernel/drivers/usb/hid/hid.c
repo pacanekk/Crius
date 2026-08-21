@@ -23,7 +23,7 @@ uint8_t ep1_ifnum = 0xFF;
 #define REPEAT_PERIOD 30
 
 static uint8_t usb_kbd_prev[8];
-static uint8_t usb_kbd_repeat[256];
+static uint16_t usb_kbd_repeat[256];
 
 static char usb_kbd_code_to_char(uint8_t code) {
     char c = 0;
@@ -177,7 +177,6 @@ int usb_kbd_poll(void) {
         return 0;
     }
 
-    static uint8_t prev[8];
     uint8_t new[8];
     for (int i = 0; i < 8; i++) new[i] = ep1_data[i];
 
