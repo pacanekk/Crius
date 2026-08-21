@@ -11,6 +11,7 @@ extern int xhci_connected_port;
 extern uint32_t xhci_portsc;
 extern uint64_t *xhci_dcbaap;
 extern volatile uint32_t *xhci_dev_ctx;
+extern volatile uint32_t *xhci_iman;
 
 extern uint32_t ep1_cycle;
 extern uint64_t ep1_tr_phys;

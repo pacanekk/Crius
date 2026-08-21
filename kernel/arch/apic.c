@@ -26,7 +26,7 @@ static inline void ioapic_write(uint8_t reg, uint32_t val) {
     *(volatile uint32_t *)(ioapic_base + 0x10) = val;
 }
 
-static void ioapic_set_redirect(uint8_t irq, uint8_t vector) {
+void ioapic_set_redirect(uint8_t irq, uint8_t vector) {
     uint8_t entry = irq * 2 + 16;
     ioapic_write(entry + 1, 0);
     ioapic_write(entry, (uint32_t)vector | (1 << 16));

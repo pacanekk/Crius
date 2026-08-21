@@ -214,6 +214,8 @@ int usb_kbd_poll(void) {
     volatile uint32_t *db = (volatile uint32_t *)(xhci_cap + (db_off & ~0x03u));
     db[xhci_slot_id] = ep1_id;
     (void)db[xhci_slot_id];
+
+    if (xhci_iman) *xhci_iman = (1u << 1) | (1u << 0); /* IE + clear IP (W1C) */
     return 1;
 }
 

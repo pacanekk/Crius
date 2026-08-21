@@ -56,6 +56,7 @@ uint8_t xhci_send_command(volatile uint8_t *cap, uint32_t word0, uint32_t word1,
 
     uint32_t ev2 = event_ring[e * 4 + 2];
     uint8_t cc = (uint8_t)(ev2 >> 24);
+    if (xhci_iman) *xhci_iman = (1u << 1) | (1u << 0); /* clear IP (W1C) + IE */
     return cc;
 }
 

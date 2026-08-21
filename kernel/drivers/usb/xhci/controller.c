@@ -5,8 +5,12 @@
 #include "drivers/xhci.h"
 #include "drivers/keyboard.h"
 #include "xhci_internal.h"
+#include "arch/apic.h"
+#include "arch/idt.h"
 #include "mm/vmm.h"
 #include "mm/pmm.h"
+
+extern void irq34(void);
 
 #define XHCI_CLASS      0x0C
 #define XHCI_SUBCLASS   0x03
@@ -24,6 +28,7 @@ static int xhci_device_count = 0;
 
 uint64_t *xhci_dcbaap;
 volatile uint32_t *xhci_dev_ctx;
+volatile uint32_t *xhci_iman;
 int xhci_connected_port = -1;
 uint32_t xhci_portsc = 0;
 uint8_t xhci_slot_id = 0;
@@ -109,6 +114,13 @@ void xhci_init(void) {
     xhci_cap = cap;
     xhci_reset(cap, caplen);
     xhci_setup_and_run(cap, caplen);
+
+    serial_puts("xhci: intline=");
+    serial_hex(xhci->interrupt_line);
+    serial_puts("\n");
+    idt_set_gate(0x22, (void *)irq34, 0x8E);
+    ioapic_set_redirect(xhci->interrupt_line, 0x22);
+
     xhci_ports_init(cap, caplen, hcsparams1);
 
     xhci_slot_id = 0;
@@ -259,8 +271,9 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
     volatile uint32_t *erstsz = (volatile uint32_t *)(rt + 0x28);
     volatile uint64_t *erstba = (volatile uint64_t *)(rt + 0x30);
     volatile uint64_t *erdp = (volatile uint64_t *)(rt + 0x38);
+    volatile uint32_t *iman = (volatile uint32_t *)(rt + 0x20);
     xhci_erdp = erdp;
-    xhci_erdp = erdp;
+    xhci_iman = iman;
     *erstsz = 1;
     *erstba = erst_phys;
     *erdp = event_phys | 8u;
@@ -271,7 +284,9 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
     op[7] = (uint32_t)(cmd_phys >> 32);
     op[14] = 1;
 
-    op[0] = 1; /* RS */
+    *iman = (1u << 1); /* IE */
+
+    op[0] = 1 | (1u << 2); /* RS + INTE */
     int ok = 0;
     for (int i = 0; i < 1000000; i++) {
         if (!(op[1] & 1u)) { ok = 1; break; }

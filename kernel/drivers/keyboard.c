@@ -105,8 +105,12 @@ char kb_read(void) {
 
 void irq_handler(uint64_t vector) {
     if (vector == 32) {
-        if (usb_kbd_present) usb_kbd_poll();
         scheduler_tick();
+        apic_eoi();
+        return;
+    }
+    if (vector == 0x22) {
+        if (usb_kbd_present) usb_kbd_poll();
         apic_eoi();
         return;
     }
