@@ -462,3 +462,27 @@ The following limitations are derived from the current implementation:
 - **Devices**: IDE driver uses PIO. AHCI, SATA, and NVMe are not supported. USB xHCI is supported for HID boot keyboards only; other USB devices are not.
 - **Userspace**: libc is intentionally minimal. No shared libraries, no dynamic linker, and no full POSIX compatibility.
 - **Testing**: runtime testing has been done under QEMU only.
+
+---
+
+## 14. Preparing for Bare-Metal and UEFI Boot
+
+Crius is tested under QEMU with BIOS CD boot by default. Before the first real hardware boot, the following items were added or reviewed:
+
+- **IOAPIC/xHCI INTx routing** (`kernel/arch/apic.c`):
+  - `ioapic_set_redirect()` now reads the existing high/low word, updates only the vector and mask bits, and preserves the firmware-programmed polarity and trigger mode.
+  - `xhci_init()` checks `interrupt_line == 0xFF` and skips IOAPIC programming if the controller reports no INTx routing.
+- **Framebuffer pixel format** (`kernel/drivers/fb/fb_draw.c`):
+  - `fb_init()` now validates `bpp` and supports 24-bit and 32-bit modes. An unsupported `bpp` falls back to no framebuffer and emits a serial warning instead of writing wrong pixel sizes and producing a black screen.
+  - Drawing and scrolling use `pitch * y + x * bytes_per_pixel`, not `pitch / 4`.
+- **No init path** (`kernel/boot/kernel_main.c`):
+  - `userspace_load()` failure prints `kernel: FATAL - failed to load userspace module` and calls `hcf()`.
+- **UEFI media**:
+  - `crius.iso` already contains both `limine-bios-cd.bin` and `limine-uefi-cd.bin` plus `EFI/BOOT/BOOTX64.EFI`.
+  - Do not assume QEMU BIOS implies UEFI works; test the same ISO on the target UEFI machine or with OVMF before the first physical boot.
+
+What is still not supported on real hardware:
+
+- Only one USB xHCI controller and one HID boot keyboard are supported; hubs and non-boot keyboards may not work.
+- PS/2 fallback exists but many new boards have no PS/2 controller; test with a real USB HID keyboard.
+- `hcf()` simply halts; a watchdog or reset-on-failure mechanism is not implemented.
