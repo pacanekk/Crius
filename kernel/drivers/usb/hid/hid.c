@@ -100,36 +100,6 @@ void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen) {
     (void)db[xhci_slot_id];
     serial_puts("xhci: ep1 armed\n");
     usb_kbd_present = 1;
-
-    /* wait a short while for a test key from QEMU monitor */
-    int e = xhci_event_idx;
-    int got = 0;
-    for (long long i = 0; i < 2000000000LL; i++) {
-        uint32_t ev3 = event_ring[e * 4 + 3];
-        uint8_t type = (uint8_t)((ev3 >> 10) & 0x3F);
-        if (type == 32) {
-            uint8_t slot = (uint8_t)(ev3 >> 24);
-            uint8_t ep = (uint8_t)((ev3 >> 16) & 0x1F);
-            uint32_t ev2 = event_ring[e * 4 + 2];
-            uint8_t cc = (uint8_t)(ev2 >> 24);
-            if (slot == xhci_slot_id && ep == ep1_id && cc == 1) {
-                got = 1;
-                break;
-            }
-            if (e < 255) e++;
-            continue;
-        }
-        if (type != 0 && e < 255) e++;
-    }
-    if (got) {
-        xhci_advance_event(e);
-        serial_puts("xhci: hid report");
-        for (int i = 0; i < 8; i++) {
-            serial_puts(" ");
-            serial_hex(ep1_data[i]);
-        }
-        serial_puts("\n");
-    }
 }
 
 
