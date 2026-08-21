@@ -87,95 +87,129 @@ static void xhci_ownership_handoff(volatile uint8_t *cap, uint32_t hccparams1) {
     }
 }
 
+static uint32_t xhci_mfindex(volatile uint8_t *cap) {
+    uint32_t rts_off = *(volatile uint32_t *)(cap + 0x18);
+    volatile uint8_t *rt = cap + (rts_off & ~0x1Fu);
+    return *(volatile uint32_t *)(rt + 0x18) & 0x3FFFu;
+}
+
+static void xhci_mdelay(volatile uint8_t *cap, uint32_t ms) {
+    uint32_t start = xhci_mfindex(cap);
+    uint32_t ticks = ms * 8u;
+    uint32_t prev = start;
+    uint32_t stuck = 0;
+    volatile uint64_t spins = 0;
+    for (;;) {
+        uint32_t now = xhci_mfindex(cap);
+        uint32_t delta = (now - start) & 0x3FFFu;
+        if (delta >= ticks) break;
+        if (now == prev) {
+            if (++stuck > 1000) break; /* MFINDEX not advancing */
+        } else {
+            stuck = 0;
+            prev = now;
+        }
+        if (spins++ > 0x40000000ULL) break; /* ~1 s on fast CPU */
+        __asm__ volatile ("pause");
+    }
+}
+
 void xhci_init(void) {
-    struct pci_device *xhci = NULL;
-    for (int i = 0; i < pci_device_count; i++) {
+    int xhcis[8];
+    int n = 0;
+    for (int i = 0; i < pci_device_count && n < 8; i++) {
         struct pci_device *d = &pci_devices[i];
         if (d->class_code == XHCI_CLASS &&
             d->subclass == XHCI_SUBCLASS &&
             d->prog_if == XHCI_PROG_IF) {
-            xhci = d;
-            break;
+            xhcis[n++] = i;
         }
     }
-    if (!xhci) {
+    if (n == 0) {
         serial_puts("xhci: no controller found\n");
+        fb_puts("Crius: no xHCI\n", 0x00FFFFFF, 0x00000000);
         return;
     }
 
-    serial_puts("xhci: found at ");
-    serial_hex(xhci->bus); serial_puts(":");
-    serial_hex(xhci->dev); serial_puts(":");
-    serial_hex(xhci->func); serial_puts("\n");
-
-    uint64_t bar = pci_bar_addr(xhci, 0);
-    if (bar == 0) {
-        serial_puts("xhci: invalid or I/O BAR\n");
-        return;
-    }
-    serial_puts("xhci: bar0=");
-    serial_hex(bar); serial_puts("\n");
-
-    uint64_t vbase = 0xFFFFFFFFA0000000UL;
-    if (vmm_map_range(vmm_current_pml4(), vbase, bar & ~0xFFFUL, 16,
-                       PAGE_PRESENT | PAGE_WRITABLE | PAGE_NO_CACHE) < 0) {
-        serial_puts("xhci: vmm_map_range failed\n");
-        return;
-    }
-    serial_puts("xhci: mmio mapped at ");
-    serial_hex(vbase); serial_puts("\n");
-
-    volatile uint8_t *cap = (volatile uint8_t *)(vbase + (bar & 0xFFFUL));
-    uint8_t caplen   = *(volatile uint8_t *)cap;
-    uint16_t version = *(volatile uint16_t *)(cap + 0x02);
-    uint32_t hcsparams1 = *(volatile uint32_t *)(cap + 0x04);
-    uint32_t hcsparams2 = *(volatile uint32_t *)(cap + 0x08);
-    uint32_t hccparams1 = *(volatile uint32_t *)(cap + 0x10);
-
-    serial_puts("xhci: caplen=");
-    serial_hex(caplen); serial_puts(" version=");
-    serial_hex(version); serial_puts("\n");
-    serial_puts("xhci: hcsparams1=");
-    serial_hex(hcsparams1); serial_puts(" hcsparams2=");
-    serial_hex(hcsparams2); serial_puts("\n");
-    serial_puts("xhci: hccparams1=");
-    serial_hex(hccparams1); serial_puts("\n");
-    serial_puts("xhci: CSZ=");
-    serial_hex((hccparams1 >> 2) & 1u); serial_puts("\n");
-
-    xhci_cap = cap;
-    xhci_ownership_handoff(cap, hccparams1);
-    xhci_reset(cap, caplen);
-    xhci_setup_and_run(cap, caplen);
-
-    serial_puts("xhci: intline=");
-    serial_hex(xhci->interrupt_line);
-    serial_puts("\n");
+    serial_puts("xhci: controllers="); serial_hex(n); serial_puts("\n");
     idt_set_gate(0x22, (void *)irq34, 0x8E);
-    if (xhci->interrupt_line == 0xFF) {
-        serial_puts("xhci: no INTx routing\n");
-    } else {
-        ioapic_set_redirect(xhci->interrupt_line, 0x22);
-    }
+    fb_puts("Crius: scanning xHCI...\n", 0x00FFFFFF, 0x00000000);
 
-    xhci_ports_init(cap, caplen, hcsparams1);
+    volatile uint32_t *prev_iman = NULL;
+    for (int c = 0; c < n; c++) {
+        struct pci_device *d = &pci_devices[xhcis[c]];
+        serial_puts("xhci: trying ");
+        serial_hex(d->bus); serial_puts(":");
+        serial_hex(d->dev); serial_puts(":");
+        serial_hex(d->func); serial_puts("\n");
 
-    xhci_slot_id = 0;
-    for (int i = 0; i < xhci_device_count; i++) {
-        xhci_connected_port = xhci_devices[i].port;
-        xhci_portsc = xhci_devices[i].sc;
-        uint8_t slot = xhci_enable_slot(cap);
-        if (!slot) continue;
-        xhci_slot_id = slot;
-        if (!xhci_address_device(cap, caplen)) continue;
-        xhci_get_device_descriptor(cap, caplen);
-        xhci_get_config_descriptor(cap, caplen);
-        if (ep1_id != 0 && ep1_ifnum != 0xFF) {
-            xhci_setup_hid(cap, caplen);
-            xhci_configure_hid(cap, caplen);
-            if (usb_kbd_present) break;
+        uint64_t bar = pci_bar_addr(d, 0);
+        if (bar == 0) {
+            serial_puts("xhci: invalid or I/O BAR\n");
+            continue;
         }
+
+        uint64_t vbase = 0xFFFFFFFFA0000000UL + (uint64_t)c * 0x10000;
+        if (vmm_map_range(vmm_current_pml4(), vbase, bar & ~0xFFFUL, 16,
+                           PAGE_PRESENT | PAGE_WRITABLE | PAGE_NO_CACHE) < 0) {
+            serial_puts("xhci: vmm_map_range failed\n");
+            continue;
+        }
+
+        volatile uint8_t *cap = (volatile uint8_t *)(vbase + (bar & 0xFFFUL));
+        uint8_t caplen   = *(volatile uint8_t *)cap;
+        uint16_t version = *(volatile uint16_t *)(cap + 0x02);
+        uint32_t hcsparams1 = *(volatile uint32_t *)(cap + 0x04);
+        uint32_t hcsparams2 = *(volatile uint32_t *)(cap + 0x08);
+        uint32_t hccparams1 = *(volatile uint32_t *)(cap + 0x10);
+
+        serial_puts("xhci: caplen=");
+        serial_hex(caplen); serial_puts(" version=");
+        serial_hex(version); serial_puts("\n");
+        serial_puts("xhci: hcsparams1=");
+        serial_hex(hcsparams1); serial_puts(" hcsparams2=");
+        serial_hex(hcsparams2); serial_puts("\n");
+        serial_puts("xhci: hccparams1=");
+        serial_hex(hccparams1); serial_puts("\n");
+
+        xhci_cap = cap;
+        xhci_ownership_handoff(cap, hccparams1);
+        xhci_reset(cap, caplen);
+        xhci_setup_and_run(cap, caplen);
+
+        if (c > 0 && prev_iman) *prev_iman = 0; /* disable previous controller IRQs */
+        prev_iman = xhci_iman;
+
+        serial_puts("xhci: intline=");
+        serial_hex(d->interrupt_line);
+        serial_puts("\n");
+        if (d->interrupt_line == 0xFF) {
+            serial_puts("xhci: no INTx routing\n");
+        } else {
+            ioapic_set_redirect(d->interrupt_line, 0x22);
+        }
+
+        xhci_ports_init(cap, caplen, hcsparams1);
+
+        xhci_slot_id = 0;
+        for (int i = 0; i < xhci_device_count; i++) {
+            xhci_connected_port = xhci_devices[i].port;
+            xhci_portsc = xhci_devices[i].sc;
+            uint8_t slot = xhci_enable_slot(cap);
+            if (!slot) continue;
+            xhci_slot_id = slot;
+            if (!xhci_address_device(cap, caplen)) continue;
+            xhci_get_device_descriptor(cap, caplen);
+            xhci_get_config_descriptor(cap, caplen);
+            if (ep1_id != 0 && ep1_ifnum != 0xFF) {
+                xhci_setup_hid(cap, caplen);
+                xhci_configure_hid(cap, caplen);
+                if (usb_kbd_present) break;
+            }
+        }
+        if (usb_kbd_present) break;
     }
+
     if (!usb_kbd_present) {
         serial_puts("xhci: no keyboard found\n");
         fb_puts("Crius: no USB keyboard found\n", 0x00FFFFFF, 0x00000000);
@@ -183,8 +217,7 @@ void xhci_init(void) {
         fb_puts("Crius: USB keyboard ready\n", 0x00FFFFFF, 0x00000000);
     }
 
-    for (volatile uint64_t i = 0; i < 0x2000000ULL; i++)
-        __asm__ volatile ("pause");
+    if (xhci_cap) xhci_mdelay(xhci_cap, 2000);
 }
 
 static void xhci_reset(volatile uint8_t *cap, uint8_t caplen) {
@@ -239,12 +272,12 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
         *portsc = (1u << 9);
 
         int connected = 0;
-        for (int i = 0; i < 500000; i++) {
+        for (int w = 0; w < 10; w++) {
             uint32_t sc = *portsc;
             if (sc & (1u << 17))            /* clear CSC */
                 *portsc = (1u << 9) | (1u << 17);
             if (sc & 1u) { connected = 1; break; }
-            __asm__ volatile ("pause");
+            xhci_mdelay(cap, 50); /* 50 ms * 10 = 500 ms */
         }
 
         uint32_t sc = *portsc;
