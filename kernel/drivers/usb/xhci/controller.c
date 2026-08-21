@@ -204,7 +204,7 @@ void xhci_init(void) {
         fb_puts("Crius: USB keyboard ready\n", 0x00FFFFFF, 0x00000000);
     }
 
-    if (xhci_cap) xhci_mdelay(xhci_cap, 2000);
+    if (xhci_cap) xhci_mdelay(xhci_cap, 10000);
 }
 
 static void xhci_reset(volatile uint8_t *cap, uint8_t caplen) {
