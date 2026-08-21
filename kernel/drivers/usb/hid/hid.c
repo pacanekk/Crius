@@ -136,14 +136,32 @@ int usb_kbd_poll(void) {
     for (int i = 0; i < 8; i++) { serial_hex(new[i]); serial_puts(" "); }
     serial_puts("\n");
 
+    #define REPEAT_START 30
+    #define REPEAT_PERIOD 6
+    static uint8_t usb_kbd_repeat[256];
+    uint8_t current[256] = {0};
+
     for (int i = 2; i < 8; i++) {
         uint8_t code = new[i];
         if (code == 0) continue;
+        current[code] = 1;
+
         int was = 0;
         for (int j = 2; j < 8; j++) {
             if (prev[j] == code) { was = 1; break; }
         }
-        if (was) continue;
+
+        if (was) {
+            usb_kbd_repeat[code]++;
+            if (usb_kbd_repeat[code] >= REPEAT_START &&
+                ((usb_kbd_repeat[code] - REPEAT_START) % REPEAT_PERIOD) == 0) {
+                /* repeat; fall through to c lookup */
+            } else {
+                continue;
+            }
+        } else {
+            usb_kbd_repeat[code] = 1;
+        }
 
         char c = 0;
         if (code >= 0x04 && code <= 0x1d) c = 'a' + (code - 0x04);
@@ -171,6 +189,11 @@ int usb_kbd_poll(void) {
             serial_puts("xhci: key "); serial_putc(c); serial_puts("\n");
             kb_buf_push((unsigned char)c);
         }
+    }
+
+    for (int j = 2; j < 8; j++) {
+        uint8_t code = prev[j];
+        if (code && !current[code]) usb_kbd_repeat[code] = 0;
     }
 
     for (int i = 0; i < 8; i++) prev[i] = new[i];
