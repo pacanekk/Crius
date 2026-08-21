@@ -1,5 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
+#include "drivers/serial.h"
 #include "drivers/framebuffer.h"
 #include "fb_internal.h"
 #include "drivers/font8x8.h"
@@ -16,12 +17,39 @@ void fb_init(struct limine_framebuffer *framebuffer) {
     fb = framebuffer;
     fb_x = 0;
     fb_y = 0;
+    if (fb && fb->bpp != 24 && fb->bpp != 32) {
+        serial_puts("fb: unsupported bpp ");
+        serial_hex(fb->bpp);
+        serial_puts("\n");
+        fb = NULL;
+    }
+}
+
+static uint32_t fb_get_pixel(int x, int y) {
+    if (!fb) return 0;
+    uint8_t *ptr = (uint8_t *)fb->address;
+    if (fb->bpp == 32) {
+        uint32_t *p = (uint32_t *)(ptr + y * fb->pitch + x * 4);
+        return *p;
+    } else if (fb->bpp == 24) {
+        uint8_t *p = ptr + y * fb->pitch + x * 3;
+        return p[0] | (p[1] << 8) | (p[2] << 16);
+    }
+    return 0;
 }
 
 static void fb_draw_pixel(int x, int y, uint32_t color) {
     if (!fb) return;
-    volatile uint32_t *ptr = fb->address;
-    ptr[y * (fb->pitch / 4) + x] = color;
+    uint8_t *ptr = (uint8_t *)fb->address;
+    if (fb->bpp == 32) {
+        uint32_t *p = (uint32_t *)(ptr + y * fb->pitch + x * 4);
+        *p = color;
+    } else if (fb->bpp == 24) {
+        uint8_t *p = ptr + y * fb->pitch + x * 3;
+        p[0] = color & 0xFF;
+        p[1] = (color >> 8) & 0xFF;
+        p[2] = (color >> 16) & 0xFF;
+    }
 }
 
 void fb_draw_char(char c, int x, int y, uint32_t fg, uint32_t bg) {
@@ -49,17 +77,15 @@ void fb_clear(uint32_t color) {
 
 void fb_scroll(int lines, uint32_t bg) {
     if (!fb || lines <= 0) return;
-    int pitch_px = fb->pitch / 4;
-    volatile uint32_t *ptr = fb->address;
 
     for (size_t y = 0; y + lines < fb->height; y++) {
         for (size_t x = 0; x < fb->width; x++) {
-            ptr[y * pitch_px + x] = ptr[(y + lines) * pitch_px + x];
+            fb_draw_pixel(x, y, fb_get_pixel(x, y + lines));
         }
     }
     for (size_t y = fb->height - lines; y < fb->height; y++) {
         for (size_t x = 0; x < fb->width; x++) {
-            ptr[y * pitch_px + x] = bg;
+            fb_draw_pixel(x, y, bg);
         }
     }
 

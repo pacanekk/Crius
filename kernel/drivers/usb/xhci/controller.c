@@ -119,7 +119,11 @@ void xhci_init(void) {
     serial_hex(xhci->interrupt_line);
     serial_puts("\n");
     idt_set_gate(0x22, (void *)irq34, 0x8E);
-    ioapic_set_redirect(xhci->interrupt_line, 0x22);
+    if (xhci->interrupt_line == 0xFF) {
+        serial_puts("xhci: no INTx routing\n");
+    } else {
+        ioapic_set_redirect(xhci->interrupt_line, 0x22);
+    }
 
     xhci_ports_init(cap, caplen, hcsparams1);
 
@@ -213,7 +217,7 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
         serial_puts("xhci: port ");
         serial_hex(port); serial_puts(" device connected\n");
 
-        /* reset port */
+        /* port reset */
         *portsc = (1u << 9) | (1u << 4);
         for (int i = 0; i < 10000; i++) __asm__ volatile ("pause");
         uint32_t sc2 = *portsc;

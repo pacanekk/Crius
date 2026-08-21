@@ -26,11 +26,19 @@ static inline void ioapic_write(uint8_t reg, uint32_t val) {
     *(volatile uint32_t *)(ioapic_base + 0x10) = val;
 }
 
+static inline uint32_t ioapic_read(uint8_t reg) {
+    *(volatile uint32_t *)(ioapic_base + 0x00) = reg;
+    return *(volatile uint32_t *)(ioapic_base + 0x10);
+}
+
 void ioapic_set_redirect(uint8_t irq, uint8_t vector) {
     uint8_t entry = irq * 2 + 16;
-    ioapic_write(entry + 1, 0);
-    ioapic_write(entry, (uint32_t)vector | (1 << 16));
-    ioapic_write(entry, (uint32_t)vector);
+    uint32_t high = ioapic_read(entry + 1);
+    uint32_t low  = ioapic_read(entry);
+    low = (low & ~0xFFu) | (uint32_t)vector;    /* set vector */
+    low &= ~(1u << 16);                         /* unmask */
+    ioapic_write(entry + 1, high);
+    ioapic_write(entry, low);
 }
 
 static uint64_t hhdm_offset;
