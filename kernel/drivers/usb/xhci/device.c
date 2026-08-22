@@ -48,6 +48,8 @@ int xhci_enable_slot(volatile uint8_t *cap) {
     uint8_t cc = (uint8_t)(ev2 >> 24);
     uint8_t slot_id = (uint8_t)(ev3 >> 24);
     xhci_slot_cc = cc;
+    xhci_slot_ev2 = ev2;
+    xhci_slot_ev3 = ev3;
     serial_puts("xhci: enable slot cc=");
     serial_hex(cc); serial_puts(" slot=");
     serial_hex(slot_id); serial_puts("\n");
@@ -158,6 +160,9 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     serial_hex(cc); serial_puts(" slot=");
     serial_hex(slot); serial_puts("\n");
     xhci_addr_cc = cc;
+    if (cc == 1) {
+        xhci_dev_ctx = dev_ctx;
+    }
     return (cc == 1) ? slot : 0;
 }
 

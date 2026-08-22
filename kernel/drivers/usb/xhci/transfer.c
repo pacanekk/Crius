@@ -20,7 +20,7 @@ uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bR
     ep0_tr[enq + 0] = (uint32_t)bmRequestType | ((uint32_t)bRequest << 8) | (((uint32_t)wValue & 0xFFu) << 16) | ((((uint32_t)wValue >> 8) & 0xFFu) << 24);
     ep0_tr[enq + 1] = ((uint32_t)wIndex & 0xFFu) | ((((uint32_t)wIndex >> 8) & 0xFFu) << 8) | (((uint32_t)wLength & 0xFFu) << 16) | ((((uint32_t)wLength >> 8) & 0xFFu) << 24);
     ep0_tr[enq + 2] = 8;
-    ep0_tr[enq + 3] = (2u << 10) | (1u << 6) | (2u << 16) | cyc;
+    ep0_tr[enq + 3] = (2u << 10) | (1u << 6) | (1u << 16) | cyc; /* Setup: IDT=1, TT=1 (IN data) */
 
     ep0_tr[enq + 4] = (uint32_t)data_phys;
     ep0_tr[enq + 5] = (uint32_t)(data_phys >> 32);
@@ -44,7 +44,11 @@ uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bR
         uint8_t type = (uint8_t)((ev3 >> 10) & 0x3F);
         if (type == 0) continue;
         if ((ev3 & 1u) != xhci_event_cycle) continue;
-        if (type == 32) { ok = 1; break; }
+        if (type == 32) {
+            uint8_t ev_slot = (uint8_t)(ev3 >> 24);
+            uint8_t ev_ep = (uint8_t)((ev3 >> 16) & 0x1F);
+            if (ev_slot == xhci_slot_id && ev_ep == 1) { ok = 1; break; }
+        }
         xhci_advance_event(e);
         e = xhci_event_idx;
     }
@@ -65,6 +69,11 @@ uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bR
 
     if (cc == 1 || cc == 13) {
         ep0_enq += 12;
+        if (ep0_enq >= 1020) {
+            ep0_enq = 0;
+            ep0_cycle ^= 1u;
+            ep0_tr[1023] = (6u << 10) | (1u << 1) | ep0_cycle;
+        }
     }
     return cc;
 }
@@ -78,7 +87,7 @@ uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t b
     ep0_tr[enq + 0] = (uint32_t)bmRequestType | ((uint32_t)bRequest << 8) | (((uint32_t)wValue & 0xFFu) << 16) | ((((uint32_t)wValue >> 8) & 0xFFu) << 24);
     ep0_tr[enq + 1] = ((uint32_t)wIndex & 0xFFu) | ((((uint32_t)wIndex >> 8) & 0xFFu) << 8);
     ep0_tr[enq + 2] = 8;
-    ep0_tr[enq + 3] = (2u << 10) | (1u << 6) | cyc;
+    ep0_tr[enq + 3] = (2u << 10) | (1u << 6) | (2u << 16) | cyc; /* Setup: IDT=1, TT=2 (No Data) */
 
     ep0_tr[enq + 4] = 0;
     ep0_tr[enq + 5] = 0;
@@ -97,7 +106,11 @@ uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t b
         uint8_t type = (uint8_t)((ev3 >> 10) & 0x3F);
         if (type == 0) continue;
         if ((ev3 & 1u) != xhci_event_cycle) continue;
-        if (type == 32) { ok = 1; break; }
+        if (type == 32) {
+            uint8_t ev_slot = (uint8_t)(ev3 >> 24);
+            uint8_t ev_ep = (uint8_t)((ev3 >> 16) & 0x1F);
+            if (ev_slot == xhci_slot_id && ev_ep == 1) { ok = 1; break; }
+        }
         xhci_advance_event(e);
         e = xhci_event_idx;
     }
@@ -111,6 +124,11 @@ uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t b
     uint8_t cc = (uint8_t)(ev2 >> 24);
     if (cc == 1 || cc == 13) {
         ep0_enq += 8;
+        if (ep0_enq >= 1020) {
+            ep0_enq = 0;
+            ep0_cycle ^= 1u;
+            ep0_tr[1023] = (6u << 10) | (1u << 1) | ep0_cycle;
+        }
     }
     return cc;
 }

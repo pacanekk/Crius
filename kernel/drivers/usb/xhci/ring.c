@@ -21,7 +21,11 @@ void xhci_advance_event(int e) {
         xhci_event_idx = 0;
         xhci_event_cycle ^= 1u;
     }
-    *xhci_erdp = (event_phys + (uint64_t)xhci_event_idx * 16); /* DESI=0, no EHB */
+    /* Preserve EHB (bit 3) when writing ERDP per xHCI spec 5.5.2.3 */
+    uint64_t cur = *xhci_erdp;
+    uint64_t new_erdp = (event_phys + (uint64_t)xhci_event_idx * 16);
+    if (cur & (1ULL << 3)) new_erdp |= (1ULL << 3); /* keep EHB if set */
+    *xhci_erdp = new_erdp;
 }
 uint32_t cmd_cycle = 1;
 

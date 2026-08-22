@@ -43,6 +43,13 @@ extern uint8_t xhci_first_cfg_cc;
 extern uint8_t xhci_addr_cc;
 extern uint8_t xhci_slot_cc;
 extern uint8_t xhci_set_cfg_cc;
+
+extern uint8_t xhci_dev_slot_cc[8];
+extern uint8_t xhci_dev_addr_cc[8];
+extern uint8_t xhci_dev_port[8];
+extern uint8_t xhci_dev_spd[8];
+extern uint32_t xhci_slot_ev2;
+extern uint32_t xhci_slot_ev3;
 extern uint8_t xhci_set_proto_cc;
 extern uint8_t xhci_set_idle_cc;
 extern uint8_t xhci_get_report_cc;

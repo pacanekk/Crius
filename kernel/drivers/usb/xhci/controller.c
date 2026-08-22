@@ -44,6 +44,12 @@ uint8_t xhci_first_cfg_cc = 0;
 uint8_t xhci_addr_cc = 0;
 uint8_t xhci_slot_cc = 0;
 uint8_t xhci_set_cfg_cc = 0;
+uint8_t xhci_dev_slot_cc[8];
+uint8_t xhci_dev_addr_cc[8];
+uint8_t xhci_dev_port[8];
+uint8_t xhci_dev_spd[8];
+uint32_t xhci_slot_ev2 = 0;
+uint32_t xhci_slot_ev3 = 0;
 uint8_t xhci_set_proto_cc = 0;
 uint8_t xhci_set_idle_cc = 0;
 uint8_t xhci_get_report_cc = 0;
@@ -180,6 +186,11 @@ void xhci_init(void) {
             continue;
         }
 
+        /* Enable Memory Space (bit 1) + Bus Master (bit 2) + SERR (bit 8) */
+        uint32_t cmd_reg = pci_read_config16(d->bus, d->dev, d->func, 0x04);
+        cmd_reg |= 0x0006; /* Memory Space + Bus Master */
+        pci_write_config32(d->bus, d->dev, d->func, 0x04, cmd_reg);
+
         uint64_t vbase = 0xFFFFFFFFA0000000UL + (uint64_t)c * 0x10000;
         if (vmm_map_range(vmm_current_pml4(), vbase, bar & ~0xFFFUL, 16,
                            PAGE_PRESENT | PAGE_WRITABLE | PAGE_NO_CACHE) < 0) {
@@ -222,6 +233,11 @@ void xhci_init(void) {
 
         xhci_ports_init(cap, caplen, hcsparams1);
 
+        if (xhci_device_count == 0) {
+            serial_puts("xhci: no devices on this controller, skipping\n");
+            continue;
+        }
+
         /* drain any pending events (Port Status Change etc.) before enumeration */
         xhci_drain_events();
 
@@ -250,10 +266,14 @@ void xhci_init(void) {
 
             xhci_connected_port = xhci_devices[i].port;
             xhci_portsc = xhci_devices[i].sc;
+            xhci_dev_port[i] = (uint8_t)xhci_connected_port;
+            xhci_dev_spd[i] = (uint8_t)((xhci_portsc >> 10) & 0xF);
             uint8_t slot = xhci_enable_slot(cap);
+            xhci_dev_slot_cc[i] = xhci_slot_cc;
             if (!slot) continue;
             xhci_slot_id = slot;
-            if (!xhci_address_device(cap, caplen)) continue;
+            if (!xhci_address_device(cap, caplen)) { xhci_dev_addr_cc[i] = xhci_addr_cc; continue; }
+            xhci_dev_addr_cc[i] = xhci_addr_cc;
             xhci_get_device_descriptor(cap, caplen);
             xhci_get_config_descriptor(cap, caplen);
             if (ep1_id != 0 && ep1_ifnum != 0xFF) {
@@ -272,43 +292,35 @@ void xhci_init(void) {
         } else {
             fb_puts("Crius: xHCI ", 0x00FFFFFF, 0x00000000);
             fb_print_hex(xhci_total_devices);
-            fb_puts(" devs (ports=", 0x00FFFFFF, 0x00000000);
-            fb_print_hex8((uint8_t)xhci_device_count);
-            fb_puts(")\n", 0x00FFFFFF, 0x00000000);
-            fb_puts("  addr=", 0x00FFFFFF, 0x00000000);
-            fb_print_hex8(xhci_addr_cc);
-            fb_puts(" dev=", 0x00FFFFFF, 0x00000000);
-            fb_print_hex8(xhci_first_dev_cc);
-            fb_puts(" cfg=", 0x00FFFFFF, 0x00000000);
-            fb_print_hex8(xhci_first_cfg_cc);
-            fb_puts(" class=", 0x00FFFFFF, 0x00000000);
+            fb_puts(" devs\n", 0x00FFFFFF, 0x00000000);
+            for (int i = 0; i < xhci_device_count && i < 8; i++) {
+                fb_puts("  d", 0x00FFFFFF, 0x00000000);
+                fb_putc('0' + i, 0x00FFFFFF, 0x00000000);
+                fb_puts(": port=", 0x00FFFFFF, 0x00000000);
+                fb_print_hex8(xhci_dev_port[i]);
+                fb_puts(" spd=", 0x00FFFFFF, 0x00000000);
+                fb_print_hex8(xhci_dev_spd[i]);
+                fb_puts(" sCC=", 0x00FFFFFF, 0x00000000);
+                fb_print_hex8(xhci_dev_slot_cc[i]);
+                fb_puts(" aCC=", 0x00FFFFFF, 0x00000000);
+                fb_print_hex8(xhci_dev_addr_cc[i]);
+                fb_puts("\n", 0x00FFFFFF, 0x00000000);
+            }
+            fb_puts("  ev: sEv2=", 0x00FFFFFF, 0x00000000);
+            fb_print_hex(xhci_slot_ev2);
+            fb_puts(" sEv3=", 0x00FFFFFF, 0x00000000);
+            fb_print_hex(xhci_slot_ev3);
+            fb_puts("\n", 0x00FFFFFF, 0x00000000);
+            fb_puts("  class=", 0x00FFFFFF, 0x00000000);
             fb_print_hex8(xhci_first_if_class);
             fb_putc('/', 0x00FFFFFF, 0x00000000);
             fb_print_hex8(xhci_first_if_sub);
             fb_putc('/', 0x00FFFFFF, 0x00000000);
             fb_print_hex8(xhci_first_if_proto);
-            fb_puts("\n", 0x00FFFFFF, 0x00000000);
-            fb_puts("  setCfg=", 0x00FFFFFF, 0x00000000);
+            fb_puts(" setCfg=", 0x00FFFFFF, 0x00000000);
             fb_print_hex8(xhci_set_cfg_cc);
-            fb_puts(" setProto=", 0x00FFFFFF, 0x00000000);
-            fb_print_hex8(xhci_set_proto_cc);
-            fb_puts(" setIdle=", 0x00FFFFFF, 0x00000000);
-            fb_print_hex8(xhci_set_idle_cc);
-            fb_puts(" getRep=", 0x00FFFFFF, 0x00000000);
-            fb_print_hex8(xhci_get_report_cc);
-            fb_puts("\n", 0x00FFFFFF, 0x00000000);
-            fb_puts("  cfgEp=", 0x00FFFFFF, 0x00000000);
+            fb_puts(" cfgEp=", 0x00FFFFFF, 0x00000000);
             fb_print_hex8(xhci_cfg_ep_cc);
-            fb_puts("  slot=", 0x00FFFFFF, 0x00000000);
-            fb_print_hex8(xhci_slot_id);
-            fb_puts(" slotCC=", 0x00FFFFFF, 0x00000000);
-            fb_print_hex8(xhci_slot_cc);
-            fb_puts(" port=", 0x00FFFFFF, 0x00000000);
-            fb_print_hex8((uint8_t)xhci_root_port);
-            fb_puts(" spd=", 0x00FFFFFF, 0x00000000);
-            fb_print_hex8((uint8_t)xhci_pspd);
-            fb_puts(" ep1=", 0x00FFFFFF, 0x00000000);
-            fb_print_hex8(ep1_id);
             fb_puts("\n", 0x00FFFFFF, 0x00000000);
         }
     } else {
@@ -425,6 +437,15 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
 static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
     volatile uint32_t *op = (volatile uint32_t *)(cap + caplen);
 
+    /* Read HCSParams1 for MaxSlots and HCSParams2 for scratchpad buffers */
+    uint32_t hcsparams1 = *(volatile uint32_t *)(cap + 0x04);
+    uint32_t hcsparams2 = *(volatile uint32_t *)(cap + 0x08);
+    uint8_t max_slots = (uint8_t)(hcsparams1 & 0xFF);
+    uint32_t max_spb = (hcsparams2 >> 8) & 0x1FFF; /* Max Scratchpad Buffers */
+
+    serial_puts("xhci: max_slots="); serial_hex(max_slots);
+    serial_puts(" max_spb="); serial_hex(max_spb); serial_puts("\n");
+
     cmd_phys = pmm_alloc_page();
     if (cmd_phys == 0) { serial_puts("xhci: no cmd page\n"); return; }
     cmd_ring = (volatile uint32_t *)(vmm_get_hhdm() + cmd_phys);
@@ -445,6 +466,24 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
     xhci_dcbaap = (uint64_t *)(vmm_get_hhdm() + dcbaap_phys);
     memset((void *)xhci_dcbaap, 0, 4096);
 
+    /* Set up scratchpad buffers if controller requires them (xHCI spec 4.20) */
+    if (max_spb > 0) {
+        /* Scratchpad Buffer Array: array of uint64_t pointers, one per scratchpad buffer */
+        uint64_t spb_array_phys = pmm_alloc_page();
+        if (spb_array_phys == 0) { serial_puts("xhci: no spb array page\n"); return; }
+        volatile uint64_t *spb_array = (volatile uint64_t *)(vmm_get_hhdm() + spb_array_phys);
+        memset((void *)spb_array, 0, 4096);
+
+        for (uint32_t i = 0; i < max_spb; i++) {
+            uint64_t buf_phys = pmm_alloc_page();
+            if (buf_phys == 0) { serial_puts("xhci: no spb buf page\n"); break; }
+            spb_array[i] = buf_phys;
+        }
+        /* DCBAA slot 0 must point to the Scratchpad Buffer Array */
+        xhci_dcbaap[0] = spb_array_phys;
+        serial_puts("xhci: scratchpad buffers allocated: "); serial_hex(max_spb); serial_puts("\n");
+    }
+
     erst[0] = event_phys;
     erst[1] = 256;
 
@@ -459,12 +498,16 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
     *erstsz = 1;
     *erstba = erst_phys;
     *erdp = event_phys; /* DESI=0 */
+    xhci_event_idx = 0;
+    xhci_event_cycle = 1;
+    cmd_cycle = 1;
 
     op[12] = (uint32_t)dcbaap_phys;
     op[13] = (uint32_t)(dcbaap_phys >> 32);
     op[6] = (uint32_t)(cmd_phys | 1);
     op[7] = (uint32_t)(cmd_phys >> 32);
-    op[14] = 1;
+    /* Config Register: set MaxSlotsEN to actual MaxSlots from HCSParams1 */
+    op[14] = max_slots;
 
     *iman = (1u << 1); /* IE */
 

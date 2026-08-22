@@ -130,10 +130,10 @@ void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen) {
     in_ctx[8] = (xhci_pspd << 20) | ((uint32_t)ep1_id << 27);
     in_ctx[9] = (xhci_root_port & 0xFF) << 16;
     in_ctx[ep_base + 0] = (uint32_t)ep1_interval << 16;
-    in_ctx[ep_base + 1] = (7u << 3) | (3u << 1) | ((uint32_t)ep1_maxpkt << 16);
+    in_ctx[ep_base + 1] = (6u << 3) | (3u << 1) | ((uint32_t)ep1_maxpkt << 16); /* EP Type=6 (Interrupt In), CErr=3, MaxPkt */
     in_ctx[ep_base + 2] = (uint32_t)(ep1_tr_phys | 1);
     in_ctx[ep_base + 3] = (uint32_t)((ep1_tr_phys | 1) >> 32);
-    in_ctx[ep_base + 4] = ((uint32_t)ep1_maxpkt << 16);
+    in_ctx[ep_base + 4] = (uint32_t)ep1_maxpkt; /* Average TRB Length = max packet size */
 
     uint8_t ccc = xhci_send_command(cap, (uint32_t)in_ctx_phys, (uint32_t)(in_ctx_phys >> 32), 0,
         (12u << 10) | ((uint32_t)xhci_slot_id << 24) | cmd_cycle);
@@ -230,9 +230,9 @@ int usb_kbd_poll(void) {
 
     for (int i = 0; i < 8; i++) usb_kbd_prev[i] = new[i];
 
-    /* set cycle to match the current controller DCS */
-    dcs = xhci_dev_ctx[26] & 1u;
-    ep1_cycle = 1;
+    /* Toggle cycle bit for next transfer — controller toggles consumer cycle
+     * after processing the Link TRB, so producer cycle must match */
+    ep1_cycle ^= 1u;
     ep1_tr[0] = (uint32_t)ep1_data_phys;
     ep1_tr[1] = (uint32_t)(ep1_data_phys >> 32);
     ep1_tr[2] = ep1_maxpkt;
