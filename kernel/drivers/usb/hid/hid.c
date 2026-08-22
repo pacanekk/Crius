@@ -125,7 +125,6 @@ void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen) {
     in_ctx[1] = 1u | (1u << (uint32_t)ep1_id); /* add slot and selected EP contexts */
     in_ctx[8] = (xhci_pspd << 20) | ((uint32_t)ep1_id << 27);
     in_ctx[9] = (xhci_root_port & 0xFF) << 16;
-    in_ctx[11] = (uint32_t)xhci_slot_id; /* USB device address */
     in_ctx[ep_base + 0] = (uint32_t)ep1_interval << 16;
     in_ctx[ep_base + 1] = (7u << 3) | (3u << 1) | ((uint32_t)ep1_maxpkt << 16);
     in_ctx[ep_base + 2] = (uint32_t)(ep1_tr_phys | 1);
@@ -138,14 +137,14 @@ void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen) {
     if (ccc != 1) return;
 
     ep1_cycle = 1;
-    ep1_tr[0] = (uint32_t)data_phys;
-    ep1_tr[1] = (uint32_t)(data_phys >> 32);
+    ep1_tr[0] = (uint32_t)ep1_data_phys;
+    ep1_tr[1] = (uint32_t)(ep1_data_phys >> 32);
     ep1_tr[2] = ep1_maxpkt;
     ep1_tr[3] = (1u << 10) | (1u << 5) | ep1_cycle;
-    ep1_tr[4] = (uint32_t)ep1_tr_phys;
-    ep1_tr[5] = (uint32_t)(ep1_tr_phys >> 32);
-    ep1_tr[6] = 0;
-    ep1_tr[7] = (6u << 10) | ep1_cycle;
+    ep1_tr[1020] = (uint32_t)ep1_tr_phys;
+    ep1_tr[1021] = (uint32_t)(ep1_tr_phys >> 32);
+    ep1_tr[1022] = 0;
+    ep1_tr[1023] = (6u << 10) | (1u << 1) | ep1_cycle;
 
     uint32_t db_off = *(volatile uint32_t *)(cap + 0x14);
     volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
@@ -164,11 +163,12 @@ int usb_kbd_poll(void) {
         uint32_t ev3 = event_ring[e * 4 + 3];
         uint8_t type = (uint8_t)((ev3 >> 10) & 0x3F);
         if (type == 0) return 0;
+        if ((ev3 & 1u) != xhci_event_cycle) return 0;
         uint8_t slot = (uint8_t)(ev3 >> 24);
         uint8_t ep = (uint8_t)((ev3 >> 16) & 0x1F);
         uint32_t ev2 = event_ring[e * 4 + 2];
         uint8_t cc = (uint8_t)(ev2 >> 24);
-        if (type != 32 || slot != xhci_slot_id) {
+        if (slot != xhci_slot_id) {
             xhci_advance_event(e);
             e = xhci_event_idx;
             continue;
@@ -227,15 +227,16 @@ int usb_kbd_poll(void) {
 
     /* set cycle to match the current controller DCS */
     dcs = xhci_dev_ctx[26] & 1u;
-    ep1_cycle = dcs;
+    ep1_cycle = 1;
     ep1_tr[0] = (uint32_t)ep1_data_phys;
     ep1_tr[1] = (uint32_t)(ep1_data_phys >> 32);
     ep1_tr[2] = ep1_maxpkt;
     ep1_tr[3] = (1u << 10) | (1u << 5) | ep1_cycle;
-    ep1_tr[4] = (uint32_t)ep1_tr_phys;
-    ep1_tr[5] = (uint32_t)(ep1_tr_phys >> 32);
-    ep1_tr[6] = 0;
-    ep1_tr[7] = (6u << 10) | ep1_cycle;
+    /* Link TRB at end of ring (TRB 255 = dword 1020) */
+    ep1_tr[1020] = (uint32_t)ep1_tr_phys;
+    ep1_tr[1021] = (uint32_t)(ep1_tr_phys >> 32);
+    ep1_tr[1022] = 0;
+    ep1_tr[1023] = (6u << 10) | (1u << 1) | ep1_cycle;
 
     uint32_t db_off = *(volatile uint32_t *)(xhci_cap + 0x14);
     volatile uint32_t *db = (volatile uint32_t *)(xhci_cap + (db_off & ~0x03u));

@@ -34,8 +34,11 @@ int xhci_enable_slot(volatile uint8_t *cap) {
     for (int i = 0; i < 10000000; i++) {
         uint32_t ev3 = event_ring[e * 4 + 3];
         uint8_t type = (uint8_t)((ev3 >> 10) & 0x3F);
+        if (type == 0) continue;
+        if ((ev3 & 1u) != xhci_event_cycle) continue;
         if (type == 33) { ok = 1; break; }
-        if (type != 0 && e < 255) e++;
+        xhci_advance_event(e);
+        e = xhci_event_idx;
     }
     if (!ok) { serial_puts("xhci: enable slot no event\n"); return 0; }
     xhci_advance_event(e);
@@ -78,16 +81,11 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     if (dev_ctx_phys == 0) { serial_puts("xhci: no dev ctx page\n"); return 0; }
     volatile uint32_t *dev_ctx = (volatile uint32_t *)(vmm_get_hhdm() + dev_ctx_phys);
     memset((void *)dev_ctx, 0, 4096);
-    xhci_dev_ctx = dev_ctx;
-
-    ep0_tr[0] = 0;
-    ep0_tr[1] = 0;
-    ep0_tr[2] = 0;
-    ep0_tr[3] = (8u << 10) | 1u; /* No-Op, cycle 1 */
-    ep0_tr[4] = (uint32_t)ep0_tr_phys;
-    ep0_tr[5] = (uint32_t)(ep0_tr_phys >> 32);
-    ep0_tr[6] = 0;
-    ep0_tr[7] = (6u << 10) | (1u << 1) | 1u; /* Link with TC, cycle 1 */
+    /* Link TRB at end of ring (TRB 255 = dword 1020) wrapping to start */
+    ep0_tr[1020] = (uint32_t)ep0_tr_phys;
+    ep0_tr[1021] = (uint32_t)(ep0_tr_phys >> 32);
+    ep0_tr[1022] = 0;
+    ep0_tr[1023] = (6u << 10) | (1u << 1) | 1u; /* Link TRB with TC, cycle=1 */
     ep0_cycle = 1;
     ep0_enq = 0;
 
@@ -95,7 +93,6 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     /* slot context at offset 0x20, index 8 */
     in_ctx[8] = (pspd << 20) | (1u << 27); /* speed, context entries = 1 */
     in_ctx[9] = ((root_port & 0xFF) << 16);
-    in_ctx[11] = (uint32_t)xhci_slot_id; /* USB device address */
     /* EP0 context at offset 0x40, index 16 */
     in_ctx[16] = 0; /* EP0 dword0: state etc. */
     in_ctx[17] = ((max_pkt & 0x7FFF) << 16) | (4u << 3) | (3u << 1); /* max packet, EP type control, CErr=3 */
@@ -143,8 +140,11 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     for (int i = 0; i < 10000000; i++) {
         uint32_t ev3 = event_ring[e * 4 + 3];
         uint8_t type = (uint8_t)((ev3 >> 10) & 0x3F);
+        if (type == 0) continue;
+        if ((ev3 & 1u) != xhci_event_cycle) continue;
         if (type == 33) { ok = 1; break; }
-        if (type != 0 && e < 255) e++;
+        xhci_advance_event(e);
+        e = xhci_event_idx;
     }
     if (!ok) { serial_puts("xhci: address no cce\n"); return 0; }
     xhci_advance_event(e);

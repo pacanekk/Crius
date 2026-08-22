@@ -17,8 +17,6 @@ uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bR
 
     uint32_t cyc = ep0_cycle;
     int enq = ep0_enq;
-    uint64_t next = ep0_tr_phys + (uint64_t)(enq + 16) * 4;
-
     ep0_tr[enq + 0] = (uint32_t)bmRequestType | ((uint32_t)bRequest << 8) | (((uint32_t)wValue & 0xFFu) << 16) | ((((uint32_t)wValue >> 8) & 0xFFu) << 24);
     ep0_tr[enq + 1] = ((uint32_t)wIndex & 0xFFu) | ((((uint32_t)wIndex >> 8) & 0xFFu) << 8) | (((uint32_t)wLength & 0xFFu) << 16) | ((((uint32_t)wLength >> 8) & 0xFFu) << 24);
     ep0_tr[enq + 2] = 8;
@@ -34,11 +32,6 @@ uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bR
     ep0_tr[enq + 10] = 0;
     ep0_tr[enq + 11] = (4u << 10) | (1u << 5) | cyc;
 
-    ep0_tr[enq + 12] = (uint32_t)next;
-    ep0_tr[enq + 13] = (uint32_t)(next >> 32);
-    ep0_tr[enq + 14] = 0;
-    ep0_tr[enq + 15] = (8u << 10) | cyc;
-
     uint32_t db_off = *(volatile uint32_t *)(cap + 0x14);
     volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
     db[xhci_slot_id] = 1; /* DB_VALUE for EP0 */
@@ -49,14 +42,11 @@ uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bR
     for (int i = 0; i < 10000000; i++) {
         uint32_t ev3 = event_ring[e * 4 + 3];
         uint8_t type = (uint8_t)((ev3 >> 10) & 0x3F);
-        if (type == 32) {
-            uint32_t ev2 = event_ring[e * 4 + 2];
-            uint8_t cc0 = (uint8_t)(ev2 >> 24);
-            if (cc0 == 1 || cc0 == 13) { ok = 1; break; }
-            if (e < 255) e++;
-            continue;
-        }
-        if (type != 0 && e < 255) e++;
+        if (type == 0) continue;
+        if ((ev3 & 1u) != xhci_event_cycle) continue;
+        if (type == 32) { ok = 1; break; }
+        xhci_advance_event(e);
+        e = xhci_event_idx;
     }
     if (!ok) { serial_puts("xhci: control in no transfer event\n"); return 0; }
     xhci_advance_event(e);
@@ -74,38 +64,26 @@ uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bR
     }
 
     if (cc == 1 || cc == 13) {
-        ep0_enq += 16;
+        ep0_enq += 12;
     }
     return cc;
 }
 
 uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bRequest, uint16_t wValue, uint16_t wIndex) {
-    (void)cap;
     if (!ep0_tr) { serial_puts("xhci: no ep0 tr\n"); return 0; }
 
     uint32_t cyc = ep0_cycle;
     int enq = ep0_enq;
-    uint64_t next = ep0_tr_phys + (uint64_t)(enq + 16) * 4;
 
     ep0_tr[enq + 0] = (uint32_t)bmRequestType | ((uint32_t)bRequest << 8) | (((uint32_t)wValue & 0xFFu) << 16) | ((((uint32_t)wValue >> 8) & 0xFFu) << 24);
     ep0_tr[enq + 1] = ((uint32_t)wIndex & 0xFFu) | ((((uint32_t)wIndex >> 8) & 0xFFu) << 8);
     ep0_tr[enq + 2] = 8;
-    ep0_tr[enq + 3] = (2u << 10) | (1u << 6) | (1u << 4) | (1u << 16) | cyc;
+    ep0_tr[enq + 3] = (2u << 10) | (1u << 6) | (1u << 4) | cyc;
 
     ep0_tr[enq + 4] = 0;
     ep0_tr[enq + 5] = 0;
     ep0_tr[enq + 6] = 0;
-    ep0_tr[enq + 7] = (3u << 10) | (1u << 4) | cyc;
-
-    ep0_tr[enq + 8] = 0;
-    ep0_tr[enq + 9] = 0;
-    ep0_tr[enq + 10] = 0;
-    ep0_tr[enq + 11] = (4u << 10) | (1u << 5) | (1u << 16) | cyc;
-
-    ep0_tr[enq + 12] = (uint32_t)next;
-    ep0_tr[enq + 13] = (uint32_t)(next >> 32);
-    ep0_tr[enq + 14] = 0;
-    ep0_tr[enq + 15] = (8u << 10) | cyc;
+    ep0_tr[enq + 7] = (4u << 10) | (1u << 5) | (1u << 16) | cyc;
 
     uint32_t db_off = *(volatile uint32_t *)(cap + 0x14);
     volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
@@ -117,21 +95,14 @@ uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t b
     for (int i = 0; i < 10000000; i++) {
         uint32_t ev3 = event_ring[e * 4 + 3];
         uint8_t type = (uint8_t)((ev3 >> 10) & 0x3F);
-        if (type == 32) {
-            uint32_t ev2 = event_ring[e * 4 + 2];
-            uint8_t cc0 = (uint8_t)(ev2 >> 24);
-            if (cc0 == 1 || cc0 == 13) { ok = 1; break; }
-            if (e < 255) e++;
-            continue;
-        }
-        if (type != 0 && e < 255) e++;
+        if (type == 0) continue;
+        if ((ev3 & 1u) != xhci_event_cycle) continue;
+        if (type == 32) { ok = 1; break; }
+        xhci_advance_event(e);
+        e = xhci_event_idx;
     }
     if (!ok) {
-        serial_puts("xhci: control out no event; last type=");
-        serial_hex((uint8_t)((event_ring[e * 4 + 3] >> 10) & 0x3F));
-        serial_puts(" cc=");
-        serial_hex((uint8_t)(event_ring[e * 4 + 2] >> 24));
-        serial_puts("\n");
+        serial_puts("xhci: control out no event\n");
         return 0;
     }
     xhci_advance_event(e);
@@ -139,7 +110,7 @@ uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t b
     uint32_t ev2 = event_ring[e * 4 + 2];
     uint8_t cc = (uint8_t)(ev2 >> 24);
     if (cc == 1 || cc == 13) {
-        ep0_enq += 16;
+        ep0_enq += 8;
     }
     return cc;
 }

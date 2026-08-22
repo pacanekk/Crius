@@ -48,8 +48,11 @@ uint8_t xhci_send_command(volatile uint8_t *cap, uint32_t word0, uint32_t word1,
     for (int i = 0; i < 10000000; i++) {
         uint32_t ev3 = event_ring[e * 4 + 3];
         uint8_t type = (uint8_t)((ev3 >> 10) & 0x3F);
+        if (type == 0) continue;
+        if ((ev3 & 1u) != xhci_event_cycle) continue;
         if (type == 33) { ok = 1; break; }
-        if (type != 0 && e < 255) e++;
+        xhci_advance_event(e);
+        e = xhci_event_idx;
     }
     if (!ok) { serial_puts("xhci: command no cce\n"); return 0; }
     xhci_advance_event(e);
