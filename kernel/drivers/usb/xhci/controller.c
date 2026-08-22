@@ -42,6 +42,7 @@ uint8_t xhci_first_if_proto = 0;
 uint8_t xhci_first_dev_cc = 0;
 uint8_t xhci_first_cfg_cc = 0;
 uint8_t xhci_addr_cc = 0;
+uint8_t xhci_slot_cc = 0;
 uint8_t xhci_set_cfg_cc = 0;
 uint8_t xhci_set_proto_cc = 0;
 uint8_t xhci_set_idle_cc = 0;
@@ -221,6 +222,9 @@ void xhci_init(void) {
 
         xhci_ports_init(cap, caplen, hcsparams1);
 
+        /* drain any pending events (Port Status Change etc.) before enumeration */
+        xhci_drain_events();
+
         xhci_slot_id = 0;
         for (int i = 0; i < xhci_device_count; i++) {
             xhci_connected_port = xhci_devices[i].port;
@@ -247,7 +251,9 @@ void xhci_init(void) {
         } else {
             fb_puts("Crius: xHCI ", 0x00FFFFFF, 0x00000000);
             fb_print_hex(xhci_total_devices);
-            fb_puts(" devs\n", 0x00FFFFFF, 0x00000000);
+            fb_puts(" devs (ports=", 0x00FFFFFF, 0x00000000);
+            fb_print_hex8((uint8_t)xhci_device_count);
+            fb_puts(")\n", 0x00FFFFFF, 0x00000000);
             fb_puts("  addr=", 0x00FFFFFF, 0x00000000);
             fb_print_hex8(xhci_addr_cc);
             fb_puts(" dev=", 0x00FFFFFF, 0x00000000);
@@ -272,8 +278,10 @@ void xhci_init(void) {
             fb_puts("\n", 0x00FFFFFF, 0x00000000);
             fb_puts("  cfgEp=", 0x00FFFFFF, 0x00000000);
             fb_print_hex8(xhci_cfg_ep_cc);
-            fb_puts(" slot=", 0x00FFFFFF, 0x00000000);
+            fb_puts("  slot=", 0x00FFFFFF, 0x00000000);
             fb_print_hex8(xhci_slot_id);
+            fb_puts(" slotCC=", 0x00FFFFFF, 0x00000000);
+            fb_print_hex8(xhci_slot_cc);
             fb_puts(" port=", 0x00FFFFFF, 0x00000000);
             fb_print_hex8((uint8_t)xhci_root_port);
             fb_puts(" spd=", 0x00FFFFFF, 0x00000000);

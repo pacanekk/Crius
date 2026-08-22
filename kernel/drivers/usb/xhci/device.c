@@ -47,6 +47,7 @@ int xhci_enable_slot(volatile uint8_t *cap) {
     uint32_t ev3 = event_ring[e * 4 + 3];
     uint8_t cc = (uint8_t)(ev2 >> 24);
     uint8_t slot_id = (uint8_t)(ev3 >> 24);
+    xhci_slot_cc = cc;
     serial_puts("xhci: enable slot cc=");
     serial_hex(cc); serial_puts(" slot=");
     serial_hex(slot_id); serial_puts("\n");

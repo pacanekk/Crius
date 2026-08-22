@@ -41,6 +41,7 @@ extern uint8_t xhci_first_if_proto;
 extern uint8_t xhci_first_dev_cc;
 extern uint8_t xhci_first_cfg_cc;
 extern uint8_t xhci_addr_cc;
+extern uint8_t xhci_slot_cc;
 extern uint8_t xhci_set_cfg_cc;
 extern uint8_t xhci_set_proto_cc;
 extern uint8_t xhci_set_idle_cc;
@@ -54,6 +55,7 @@ extern uint32_t ep0_cycle;
 extern int ep0_enq;
 
 void xhci_advance_event(int e);
+void xhci_drain_events(void);
 void xhci_get_device_descriptor(volatile uint8_t *cap, uint8_t caplen);
 void xhci_get_config_descriptor(volatile uint8_t *cap, uint8_t caplen);
 int xhci_enable_slot(volatile uint8_t *cap);

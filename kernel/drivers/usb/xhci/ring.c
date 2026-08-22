@@ -24,6 +24,18 @@ void xhci_advance_event(int e) {
     *xhci_erdp = (event_phys + (uint64_t)xhci_event_idx * 16); /* DESI=0, no EHB */
 }
 uint32_t cmd_cycle = 1;
+
+void xhci_drain_events(void) {
+    if (!event_ring || !xhci_erdp) return;
+    for (int i = 0; i < 256; i++) {
+        int e = xhci_event_idx;
+        uint32_t ev3 = event_ring[e * 4 + 3];
+        uint8_t type = (uint8_t)((ev3 >> 10) & 0x3F);
+        if (type == 0) break;
+        if ((ev3 & 1u) != xhci_event_cycle) break;
+        xhci_advance_event(e);
+    }
+}
 uint8_t xhci_send_command(volatile uint8_t *cap, uint32_t word0, uint32_t word1, uint32_t word2, uint32_t word3) {
     if (!cmd_ring) { serial_puts("xhci: cmd ring not set\n"); return 0; }
 
