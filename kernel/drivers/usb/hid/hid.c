@@ -133,7 +133,7 @@ void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen) {
     in_ctx[ep_base + 1] = (7u << 3) | (3u << 1) | ((uint32_t)ep1_maxpkt << 16);
     in_ctx[ep_base + 2] = (uint32_t)(ep1_tr_phys | 1);
     in_ctx[ep_base + 3] = (uint32_t)((ep1_tr_phys | 1) >> 32);
-    in_ctx[ep_base + 4] = (uint32_t)ep1_maxpkt | ((uint32_t)ep1_maxpkt << 16);
+    in_ctx[ep_base + 4] = ((uint32_t)ep1_maxpkt << 16);
 
     uint8_t ccc = xhci_send_command(cap, (uint32_t)in_ctx_phys, (uint32_t)(in_ctx_phys >> 32), 0,
         (12u << 10) | ((uint32_t)xhci_slot_id << 24) | cmd_cycle);

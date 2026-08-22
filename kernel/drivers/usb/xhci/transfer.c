@@ -20,12 +20,12 @@ uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bR
     ep0_tr[enq + 0] = (uint32_t)bmRequestType | ((uint32_t)bRequest << 8) | (((uint32_t)wValue & 0xFFu) << 16) | ((((uint32_t)wValue >> 8) & 0xFFu) << 24);
     ep0_tr[enq + 1] = ((uint32_t)wIndex & 0xFFu) | ((((uint32_t)wIndex >> 8) & 0xFFu) << 8) | (((uint32_t)wLength & 0xFFu) << 16) | ((((uint32_t)wLength >> 8) & 0xFFu) << 24);
     ep0_tr[enq + 2] = 8;
-    ep0_tr[enq + 3] = (2u << 10) | (1u << 6) | (1u << 4) | (2u << 16) | cyc;
+    ep0_tr[enq + 3] = (2u << 10) | (1u << 6) | (2u << 16) | cyc;
 
     ep0_tr[enq + 4] = (uint32_t)data_phys;
     ep0_tr[enq + 5] = (uint32_t)(data_phys >> 32);
     ep0_tr[enq + 6] = (uint32_t)wLength;
-    ep0_tr[enq + 7] = (3u << 10) | (1u << 4) | (1u << 16) | cyc;
+    ep0_tr[enq + 7] = (3u << 10) | (1u << 16) | cyc;
 
     ep0_tr[enq + 8] = 0;
     ep0_tr[enq + 9] = 0;
@@ -78,7 +78,7 @@ uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t b
     ep0_tr[enq + 0] = (uint32_t)bmRequestType | ((uint32_t)bRequest << 8) | (((uint32_t)wValue & 0xFFu) << 16) | ((((uint32_t)wValue >> 8) & 0xFFu) << 24);
     ep0_tr[enq + 1] = ((uint32_t)wIndex & 0xFFu) | ((((uint32_t)wIndex >> 8) & 0xFFu) << 8);
     ep0_tr[enq + 2] = 8;
-    ep0_tr[enq + 3] = (2u << 10) | (1u << 6) | (1u << 4) | cyc;
+    ep0_tr[enq + 3] = (2u << 10) | (1u << 6) | cyc;
 
     ep0_tr[enq + 4] = 0;
     ep0_tr[enq + 5] = 0;

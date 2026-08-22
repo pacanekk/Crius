@@ -227,6 +227,27 @@ void xhci_init(void) {
 
         xhci_slot_id = 0;
         for (int i = 0; i < xhci_device_count; i++) {
+            /* reset per-device state */
+            ep1_id = 0;
+            ep1_ifnum = 0xFF;
+            ep1_num = 0;
+            ep1_maxpkt = 8;
+            ep1_interval = 10;
+            xhci_first_if_class = 0;
+            xhci_first_if_sub = 0;
+            xhci_first_if_proto = 0;
+            xhci_first_dev_cc = 0;
+            xhci_first_cfg_cc = 0;
+            xhci_addr_cc = 0;
+            xhci_slot_cc = 0;
+            xhci_set_cfg_cc = 0;
+            xhci_set_proto_cc = 0;
+            xhci_set_idle_cc = 0;
+            xhci_get_report_cc = 0;
+            xhci_cfg_ep_cc = 0;
+
+            xhci_drain_events();
+
             xhci_connected_port = xhci_devices[i].port;
             xhci_portsc = xhci_devices[i].sc;
             uint8_t slot = xhci_enable_slot(cap);
