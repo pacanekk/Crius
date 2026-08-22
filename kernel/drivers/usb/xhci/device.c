@@ -89,7 +89,7 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     ep0_cycle = 1;
     ep0_enq = 0;
 
-    in_ctx[1] = 0x3; /* add slot and EP0 contexts */
+    in_ctx[1] = 0x3; /* add slot and EP0 contexts (DW1 = Add Flags) */
     /* slot context at offset 0x20, index 8 */
     in_ctx[8] = (pspd << 20) | (1u << 27); /* speed, context entries = 1 */
     in_ctx[9] = ((root_port & 0xFF) << 16);
