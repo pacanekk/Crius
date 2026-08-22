@@ -400,7 +400,7 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
     xhci_iman = iman;
     *erstsz = 1;
     *erstba = erst_phys;
-    *erdp = event_phys | 8u;
+    *erdp = event_phys; /* DESI=0 */
 
     op[12] = (uint32_t)dcbaap_phys;
     op[13] = (uint32_t)(dcbaap_phys >> 32);

@@ -21,7 +21,7 @@ void xhci_advance_event(int e) {
         xhci_event_idx = 0;
         xhci_event_cycle ^= 1u;
     }
-    *xhci_erdp = (event_phys + (uint64_t)xhci_event_idx * 16) | (xhci_event_cycle ? 8u : 0u);
+    *xhci_erdp = (event_phys + (uint64_t)xhci_event_idx * 16); /* DESI=0, no EHB */
 }
 uint32_t cmd_cycle = 1;
 uint8_t xhci_send_command(volatile uint8_t *cap, uint32_t word0, uint32_t word1, uint32_t word2, uint32_t word3) {
