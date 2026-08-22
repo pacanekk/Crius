@@ -79,16 +79,19 @@ void xhci_setup_hid(volatile uint8_t *cap, uint8_t caplen) {
     if (ep1_id == 0 || ep1_ifnum == 0xFF) return;
     if (xhci_prep_ep0(cap) != 1) return;
     cc = xhci_control_out(cap, 0x00, 0x09, xhci_config_value, 0); /* SET_CONFIGURATION */
+    xhci_set_cfg_cc = cc;
     serial_puts("xhci: set config cc="); serial_hex(cc); serial_puts("\n");
     if (cc != 1) return;
 
     if (xhci_prep_ep0(cap) != 1) return;
     cc = xhci_control_out(cap, 0x21, 0x0B, 0, ep1_ifnum); /* SET_PROTOCOL (boot) */
+    xhci_set_proto_cc = cc;
     serial_puts("xhci: set protocol cc="); serial_hex(cc); serial_puts("\n");
     if (cc != 1) serial_puts("xhci: set protocol not supported, continuing\n");
 
     if (xhci_prep_ep0(cap) != 1) return;
     cc = xhci_control_out(cap, 0x21, 0x0A, 0, ep1_ifnum); /* SET_IDLE (duration=0) */
+    xhci_set_idle_cc = cc;
     serial_puts("xhci: set idle cc="); serial_hex(cc); serial_puts("\n");
     if (cc != 1) serial_puts("xhci: set idle not supported, continuing\n");
 
@@ -97,6 +100,7 @@ void xhci_setup_hid(volatile uint8_t *cap, uint8_t caplen) {
     volatile uint32_t *report = (volatile uint32_t *)(vmm_get_hhdm() + report_phys);
     memset((void *)report, 0, 4096);
     cc = xhci_control_in(cap, 0xA1, 0x01, 0x0100, ep1_ifnum, 8, report, report_phys); /* GET_REPORT */
+    xhci_get_report_cc = cc;
     serial_puts("xhci: get report cc="); serial_hex(cc); serial_puts("\n");
 
     (void)cap;
@@ -133,6 +137,7 @@ void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen) {
 
     uint8_t ccc = xhci_send_command(cap, (uint32_t)in_ctx_phys, (uint32_t)(in_ctx_phys >> 32), 0,
         (12u << 10) | ((uint32_t)xhci_slot_id << 24) | cmd_cycle);
+    xhci_cfg_ep_cc = ccc;
     serial_puts("xhci: configure ep1 cc="); serial_hex(ccc); serial_puts("\n");
     if (ccc != 1) return;
 

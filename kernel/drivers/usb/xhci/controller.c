@@ -41,6 +41,12 @@ uint8_t xhci_first_if_sub = 0;
 uint8_t xhci_first_if_proto = 0;
 uint8_t xhci_first_dev_cc = 0;
 uint8_t xhci_first_cfg_cc = 0;
+uint8_t xhci_addr_cc = 0;
+uint8_t xhci_set_cfg_cc = 0;
+uint8_t xhci_set_proto_cc = 0;
+uint8_t xhci_set_idle_cc = 0;
+uint8_t xhci_get_report_cc = 0;
+uint8_t xhci_cfg_ep_cc = 0;
 int xhci_total_devices = 0;
 static void xhci_reset(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen);
@@ -241,9 +247,12 @@ void xhci_init(void) {
         } else {
             fb_puts("Crius: xHCI ", 0x00FFFFFF, 0x00000000);
             fb_print_hex(xhci_total_devices);
-            fb_puts(" devs, devcc=", 0x00FFFFFF, 0x00000000);
+            fb_puts(" devs\n", 0x00FFFFFF, 0x00000000);
+            fb_puts("  addr=", 0x00FFFFFF, 0x00000000);
+            fb_print_hex8(xhci_addr_cc);
+            fb_puts(" dev=", 0x00FFFFFF, 0x00000000);
             fb_print_hex8(xhci_first_dev_cc);
-            fb_puts(" cfgcc=", 0x00FFFFFF, 0x00000000);
+            fb_puts(" cfg=", 0x00FFFFFF, 0x00000000);
             fb_print_hex8(xhci_first_cfg_cc);
             fb_puts(" class=", 0x00FFFFFF, 0x00000000);
             fb_print_hex8(xhci_first_if_class);
@@ -251,7 +260,27 @@ void xhci_init(void) {
             fb_print_hex8(xhci_first_if_sub);
             fb_putc('/', 0x00FFFFFF, 0x00000000);
             fb_print_hex8(xhci_first_if_proto);
-            fb_puts(" not kbd\n", 0x00FFFFFF, 0x00000000);
+            fb_puts("\n", 0x00FFFFFF, 0x00000000);
+            fb_puts("  setCfg=", 0x00FFFFFF, 0x00000000);
+            fb_print_hex8(xhci_set_cfg_cc);
+            fb_puts(" setProto=", 0x00FFFFFF, 0x00000000);
+            fb_print_hex8(xhci_set_proto_cc);
+            fb_puts(" setIdle=", 0x00FFFFFF, 0x00000000);
+            fb_print_hex8(xhci_set_idle_cc);
+            fb_puts(" getRep=", 0x00FFFFFF, 0x00000000);
+            fb_print_hex8(xhci_get_report_cc);
+            fb_puts("\n", 0x00FFFFFF, 0x00000000);
+            fb_puts("  cfgEp=", 0x00FFFFFF, 0x00000000);
+            fb_print_hex8(xhci_cfg_ep_cc);
+            fb_puts(" slot=", 0x00FFFFFF, 0x00000000);
+            fb_print_hex8(xhci_slot_id);
+            fb_puts(" port=", 0x00FFFFFF, 0x00000000);
+            fb_print_hex8((uint8_t)xhci_root_port);
+            fb_puts(" spd=", 0x00FFFFFF, 0x00000000);
+            fb_print_hex8((uint8_t)xhci_pspd);
+            fb_puts(" ep1=", 0x00FFFFFF, 0x00000000);
+            fb_print_hex8(ep1_id);
+            fb_puts("\n", 0x00FFFFFF, 0x00000000);
         }
     } else {
         fb_puts("Crius: USB keyboard ready\n", 0x00FFFFFF, 0x00000000);

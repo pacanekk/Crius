@@ -40,6 +40,12 @@ extern uint8_t xhci_first_if_sub;
 extern uint8_t xhci_first_if_proto;
 extern uint8_t xhci_first_dev_cc;
 extern uint8_t xhci_first_cfg_cc;
+extern uint8_t xhci_addr_cc;
+extern uint8_t xhci_set_cfg_cc;
+extern uint8_t xhci_set_proto_cc;
+extern uint8_t xhci_set_idle_cc;
+extern uint8_t xhci_get_report_cc;
+extern uint8_t xhci_cfg_ep_cc;
 extern int xhci_total_devices;
 
 extern uint64_t ep0_tr_phys;

@@ -156,6 +156,7 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     serial_puts("xhci: address cc=");
     serial_hex(cc); serial_puts(" slot=");
     serial_hex(slot); serial_puts("\n");
+    xhci_addr_cc = cc;
     return (cc == 1) ? slot : 0;
 }
 
