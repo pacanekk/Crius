@@ -9,6 +9,7 @@ extern uint32_t xhci_pspd;
 extern uint32_t xhci_root_port;
 extern int xhci_connected_port;
 extern uint32_t xhci_portsc;
+extern uint32_t xhci_ctx_size; /* 0=32-byte contexts, 1=64-byte contexts (HCCPARAMS1 CSZ bit) */
 extern uint64_t *xhci_dcbaap;
 extern volatile uint32_t *xhci_dev_ctx;
 extern volatile uint32_t *xhci_iman;
@@ -55,6 +56,10 @@ extern uint8_t xhci_set_idle_cc;
 extern uint8_t xhci_get_report_cc;
 extern uint8_t xhci_cfg_ep_cc;
 extern int xhci_total_devices;
+extern int xhci_ctrl_id;
+extern uint32_t xhci_last_xfer_len;
+
+void xhci_log_event(int e, const char *ctx);
 
 extern uint64_t ep0_tr_phys;
 extern volatile uint32_t *ep0_tr;

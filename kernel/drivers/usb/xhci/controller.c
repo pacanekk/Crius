@@ -32,6 +32,7 @@ volatile uint32_t *xhci_dev_ctx;
 volatile uint32_t *xhci_iman;
 int xhci_connected_port = -1;
 uint32_t xhci_portsc = 0;
+uint32_t xhci_ctx_size = 0;
 uint8_t xhci_slot_id = 0;
 uint32_t xhci_pspd = 0;
 uint32_t xhci_root_port = 0;
@@ -175,10 +176,11 @@ void xhci_init(void) {
     volatile uint32_t *prev_iman = NULL;
     for (int c = 0; c < n; c++) {
         struct pci_device *d = &pci_devices[xhcis[c]];
-        serial_puts("xhci: trying ");
-        serial_hex(d->bus); serial_puts(":");
-        serial_hex(d->dev); serial_puts(":");
-        serial_hex(d->func); serial_puts("\n");
+        xhci_ctrl_id = c;
+        serial_puts("[CTRL c"); serial_hex(c);
+        serial_puts(" PCI "); serial_hex(d->bus); serial_puts(":");
+        serial_hex(d->dev); serial_puts(":"); serial_hex(d->func);
+        serial_puts("]\n");
 
         uint64_t bar = pci_bar_addr(d, 0);
         if (bar == 0) {
@@ -198,6 +200,10 @@ void xhci_init(void) {
             continue;
         }
 
+        serial_puts("[CTRL c"); serial_hex(c);
+        serial_puts(" BAR="); serial_hex(bar);
+        serial_puts(" vbase="); serial_hex(vbase);
+        serial_puts("]\n");
         volatile uint8_t *cap = (volatile uint8_t *)(vbase + (bar & 0xFFFUL));
         uint8_t caplen   = *(volatile uint8_t *)cap;
         uint16_t version = *(volatile uint16_t *)(cap + 0x02);
@@ -213,6 +219,10 @@ void xhci_init(void) {
         serial_hex(hcsparams2); serial_puts("\n");
         serial_puts("xhci: hccparams1=");
         serial_hex(hccparams1); serial_puts("\n");
+
+        xhci_ctx_size = (hccparams1 >> 2) & 1u; /* CSZ: 0=32-byte, 1=64-byte contexts */
+        serial_puts("xhci: ctx_size=");
+        serial_hex(xhci_ctx_size ? 64 : 32); serial_puts("\n");
 
         xhci_cap = cap;
         xhci_ownership_handoff(cap, hccparams1);
@@ -239,6 +249,7 @@ void xhci_init(void) {
         }
 
         /* drain any pending events (Port Status Change etc.) before enumeration */
+        serial_puts("[PRE-ENUM DRAIN c"); serial_hex(c); serial_puts("]\n");
         xhci_drain_events();
 
         xhci_slot_id = 0;
@@ -262,6 +273,8 @@ void xhci_init(void) {
             xhci_get_report_cc = 0;
             xhci_cfg_ep_cc = 0;
 
+            serial_puts("[PRE-DEV DRAIN c"); serial_hex(c);
+            serial_puts(" dev="); serial_hex(i); serial_puts("]\n");
             xhci_drain_events();
 
             xhci_connected_port = xhci_devices[i].port;
@@ -285,46 +298,61 @@ void xhci_init(void) {
         if (usb_kbd_present) break;
     }
 
-    if (!usb_kbd_present) {
-        serial_puts("xhci: no keyboard found\n");
-        if (xhci_total_devices == 0) {
-            fb_puts("Crius: no USB devices on xHCI\n", 0x00FFFFFF, 0x00000000);
+    {
+        fb_puts("\nUSB KBD DEBUG\n", 0x00FFFF00, 0x00000000);
+        fb_puts("port=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_dev_port[0]);
+        fb_puts(" speed=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_dev_spd[0]);
+        fb_puts(" ctx=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_ctx_size ? 64 : 32);
+        fb_puts("\n", 0x00FFFFFF, 0x00000000);
+
+        fb_puts("ENABLE cc=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_slot_cc);
+        fb_puts(" slot=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_slot_id);
+        fb_puts("\n", 0x00FFFFFF, 0x00000000);
+
+        fb_puts("ADDRESS cc=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_addr_cc);
+        fb_puts("\n", 0x00FFFFFF, 0x00000000);
+
+        fb_puts("GETDEV cc=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_first_dev_cc);
+        fb_puts(" len=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex(xhci_last_xfer_len);
+        fb_puts("\n", 0x00FFFFFF, 0x00000000);
+
+        fb_puts("GETCFG cc=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_first_cfg_cc);
+        fb_puts("\n", 0x00FFFFFF, 0x00000000);
+
+        fb_puts("HID class=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_first_if_class);
+        fb_putc('/', 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_first_if_sub);
+        fb_putc('/', 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_first_if_proto);
+        fb_puts("\n", 0x00FFFFFF, 0x00000000);
+
+        fb_puts("SETCFG cc=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_set_cfg_cc);
+        fb_puts(" SETPROTO cc=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_set_proto_cc);
+        fb_puts(" SETIDLE cc=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_set_idle_cc);
+        fb_puts("\n", 0x00FFFFFF, 0x00000000);
+
+        fb_puts("CFGEP cc=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_cfg_ep_cc);
+        fb_puts("\n", 0x00FFFFFF, 0x00000000);
+
+        if (usb_kbd_present) {
+            fb_puts("KBD READY\n", 0x0000FF00, 0x00000000);
         } else {
-            fb_puts("Crius: xHCI ", 0x00FFFFFF, 0x00000000);
-            fb_print_hex(xhci_total_devices);
-            fb_puts(" devs\n", 0x00FFFFFF, 0x00000000);
-            for (int i = 0; i < xhci_device_count && i < 8; i++) {
-                fb_puts("  d", 0x00FFFFFF, 0x00000000);
-                fb_putc('0' + i, 0x00FFFFFF, 0x00000000);
-                fb_puts(": port=", 0x00FFFFFF, 0x00000000);
-                fb_print_hex8(xhci_dev_port[i]);
-                fb_puts(" spd=", 0x00FFFFFF, 0x00000000);
-                fb_print_hex8(xhci_dev_spd[i]);
-                fb_puts(" sCC=", 0x00FFFFFF, 0x00000000);
-                fb_print_hex8(xhci_dev_slot_cc[i]);
-                fb_puts(" aCC=", 0x00FFFFFF, 0x00000000);
-                fb_print_hex8(xhci_dev_addr_cc[i]);
-                fb_puts("\n", 0x00FFFFFF, 0x00000000);
-            }
-            fb_puts("  ev: sEv2=", 0x00FFFFFF, 0x00000000);
-            fb_print_hex(xhci_slot_ev2);
-            fb_puts(" sEv3=", 0x00FFFFFF, 0x00000000);
-            fb_print_hex(xhci_slot_ev3);
-            fb_puts("\n", 0x00FFFFFF, 0x00000000);
-            fb_puts("  class=", 0x00FFFFFF, 0x00000000);
-            fb_print_hex8(xhci_first_if_class);
-            fb_putc('/', 0x00FFFFFF, 0x00000000);
-            fb_print_hex8(xhci_first_if_sub);
-            fb_putc('/', 0x00FFFFFF, 0x00000000);
-            fb_print_hex8(xhci_first_if_proto);
-            fb_puts(" setCfg=", 0x00FFFFFF, 0x00000000);
-            fb_print_hex8(xhci_set_cfg_cc);
-            fb_puts(" cfgEp=", 0x00FFFFFF, 0x00000000);
-            fb_print_hex8(xhci_cfg_ep_cc);
-            fb_puts("\n", 0x00FFFFFF, 0x00000000);
+            fb_puts("KBD FAILED\n", 0x000000FF, 0x00000000);
         }
-    } else {
-        fb_puts("Crius: USB keyboard ready\n", 0x00FFFFFF, 0x00000000);
     }
 
     if (xhci_cap) xhci_mdelay(xhci_cap, 3000);
@@ -421,12 +449,17 @@ static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsp
         serial_hex(port); serial_puts(" after pr sc=");
         serial_hex(sc2); serial_puts("\n");
         if (ok) {
+            xhci_mdelay(cap, 10); /* USB 2.0 recovery time after reset */
             uint32_t s = *portsc;
             *portsc = (1u << 9) | (1u << 21); /* clear PLC, keep power */
+            /* Update saved sc with post-reset value so PSPD speed is correct */
+            if (xhci_device_count > 0 && xhci_devices[xhci_device_count - 1].port == port)
+                xhci_devices[xhci_device_count - 1].sc = s;
             serial_puts("xhci: port ");
             serial_hex(port); serial_puts(" reset done ped=");
             serial_hex((s & (1u << 1)) ? 1 : 0); serial_puts(" pls=");
-            serial_hex((s >> 5) & 0xF); serial_puts("\n");
+            serial_hex((s >> 5) & 0xF); serial_puts(" spd=");
+            serial_hex((s >> 10) & 0xF); serial_puts("\n");
         } else {
             serial_puts("xhci: port ");
             serial_hex(port); serial_puts(" reset timeout\n");
@@ -510,6 +543,15 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
     op[14] = max_slots;
 
     *iman = (1u << 1); /* IE */
+
+    serial_puts("[RING c"); serial_hex(xhci_ctrl_id);
+    serial_puts(" erstsz="); serial_hex(*erstsz);
+    serial_puts(" erstba="); serial_hex(*erstba);
+    serial_puts(" erdp="); serial_hex(*erdp);
+    serial_puts(" event_phys="); serial_hex(event_phys);
+    serial_puts(" cmd_phys="); serial_hex(cmd_phys);
+    serial_puts(" dcbaap="); serial_hex(dcbaap_phys);
+    serial_puts("]\n");
 
     op[0] = 1 | (1u << 2); /* RS + INTE */
     int ok = 0;

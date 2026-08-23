@@ -13,6 +13,10 @@ int xhci_enable_slot(volatile uint8_t *cap) {
     if (!cmd_ring) { serial_puts("xhci: cmd ring not set\n"); return 0; }
 
     uint32_t cyc = cmd_cycle;
+    serial_puts("[CMD c"); serial_hex(xhci_ctrl_id);
+    serial_puts(" ENABLE_SLOT cyc="); serial_hex(cyc);
+    serial_puts(" cmd_phys="); serial_hex(cmd_phys);
+    serial_puts("]\n");
     cmd_ring[0] = 0;
     cmd_ring[1] = 0;
     cmd_ring[2] = 0;
@@ -25,6 +29,8 @@ int xhci_enable_slot(volatile uint8_t *cap) {
 
     uint32_t db_off = *(volatile uint32_t *)(cap + 0x14);
     volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
+    serial_puts("[DB c"); serial_hex(xhci_ctrl_id);
+    serial_puts(" db=0 val=0]\n");
     db[0] = 0; /* DB_VALUE_HOST */
     (void)db[0];
     cmd_cycle ^= 1u;
@@ -37,22 +43,30 @@ int xhci_enable_slot(volatile uint8_t *cap) {
         if (type == 0) continue;
         if ((ev3 & 1u) != xhci_event_cycle) continue;
         if (type == 33) { ok = 1; break; }
+        xhci_log_event(e, "skip-enable");
         xhci_advance_event(e);
         e = xhci_event_idx;
     }
     if (!ok) { serial_puts("xhci: enable slot no event\n"); return 0; }
+    xhci_log_event(e, "match-enable");
     xhci_advance_event(e);
 
     uint32_t ev2 = event_ring[e * 4 + 2];
     uint32_t ev3 = event_ring[e * 4 + 3];
+    uint32_t ev0 = event_ring[e * 4 + 0];
+    uint32_t ev1 = event_ring[e * 4 + 1];
     uint8_t cc = (uint8_t)(ev2 >> 24);
     uint8_t slot_id = (uint8_t)(ev3 >> 24);
+    uint64_t cmd_trb_ptr = ((uint64_t)ev1 << 32) | ev0;
     xhci_slot_cc = cc;
     xhci_slot_ev2 = ev2;
     xhci_slot_ev3 = ev3;
-    serial_puts("xhci: enable slot cc=");
-    serial_hex(cc); serial_puts(" slot=");
-    serial_hex(slot_id); serial_puts("\n");
+    serial_puts("[CCE c"); serial_hex(xhci_ctrl_id);
+    serial_puts(" ENABLE cc="); serial_hex(cc);
+    serial_puts(" slot="); serial_hex(slot_id);
+    serial_puts(" cmd_trb="); serial_hex(cmd_trb_ptr);
+    serial_puts(" exp="); serial_hex(cmd_phys);
+    serial_puts("]\n");
     return (cc == 1) ? slot_id : 0;
 }
 
@@ -63,9 +77,12 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     uint32_t pspd = (xhci_portsc >> 10) & 0xF;
     uint32_t max_pkt = 64;
     switch (pspd) {
-        case 2: max_pkt = 8; break;
-        case 4: case 5: case 6: case 7: max_pkt = 512; break;
+        case 2: max_pkt = 8; break;      /* Low Speed (1.5M) */
+        case 4: case 5: case 6: case 7: max_pkt = 512; break; /* SuperSpeed */
+        default: max_pkt = 64; break;    /* Full Speed (1) and High Speed (3) */
     }
+    /* Context size: 32 bytes (CSZ=0) or 64 bytes (CSZ=1) per HCCPARAMS1 bit 2 */
+    uint32_t ctx_dwords = xhci_ctx_size ? 16 : 8; /* 16 or 8 dwords per context */
     uint32_t root_port = (uint32_t)(xhci_connected_port + 1);
     xhci_pspd = pspd;
     xhci_root_port = root_port;
@@ -93,15 +110,17 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     ep0_enq = 0;
 
     in_ctx[1] = 0x3; /* add slot and EP0 contexts (DW1 = Add Flags) */
-    /* slot context at offset 0x20, index 8 */
-    in_ctx[8] = (pspd << 20) | (1u << 27); /* speed, context entries = 1 */
-    in_ctx[9] = ((root_port & 0xFF) << 16);
-    /* EP0 context at offset 0x40, index 16 */
-    in_ctx[16] = 0; /* EP0 dword0: state etc. */
-    in_ctx[17] = ((max_pkt & 0x7FFF) << 16) | (4u << 3) | (3u << 1); /* max packet, EP type control, CErr=3 */
-    in_ctx[18] = (uint32_t)(ep0_tr_phys | 1);
-    in_ctx[19] = (uint32_t)((ep0_tr_phys | 1) >> 32);
-    in_ctx[20] = 8; /* average TRB length in dword4 */
+    /* slot context at offset ctx_dwords*4 */
+    uint32_t slot_idx = ctx_dwords;       /* 8 or 16 */
+    uint32_t ep0_idx = ctx_dwords * 2;    /* 16 or 32 */
+    in_ctx[slot_idx + 0] = (pspd << 20) | (1u << 27); /* speed, context entries = 1 */
+    in_ctx[slot_idx + 1] = ((root_port & 0xFF) << 16);
+    /* EP0 context at offset ctx_dwords*2*4 */
+    in_ctx[ep0_idx + 0] = 0; /* EP0 dword0: state etc. */
+    in_ctx[ep0_idx + 1] = ((max_pkt & 0x7FFF) << 16) | (4u << 3) | (3u << 1); /* max packet, EP type control, CErr=3 */
+    in_ctx[ep0_idx + 2] = (uint32_t)(ep0_tr_phys | 1);
+    in_ctx[ep0_idx + 3] = (uint32_t)((ep0_tr_phys | 1) >> 32);
+    in_ctx[ep0_idx + 4] = 8; /* average TRB length in dword4 */
 
     serial_puts("xhci: slot=");
     serial_hex(xhci_slot_id);
@@ -114,14 +133,46 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     serial_puts(" ep0="); serial_hex((uint32_t)ep0_tr_phys);
     serial_puts(" cmd="); serial_hex((uint32_t)cmd_phys);
     serial_puts("\n");
-    for (int i = 0; i < 24; i++) {
+    serial_puts("[INPUT CTX c"); serial_hex(xhci_ctrl_id);
+    serial_puts("]\n");
+    for (int i = 0; i < 48; i++) {
         serial_puts("IC["); serial_hex(i); serial_puts("]=");
         serial_hex(in_ctx[i]); serial_puts("\n");
+    }
+    serial_puts("[SLOT CTX: DW0="); serial_hex(in_ctx[slot_idx + 0]);
+    serial_puts(" DW1="); serial_hex(in_ctx[slot_idx + 1]);
+    serial_puts("]\n");
+    serial_puts("[EP0 CTX: DW0="); serial_hex(in_ctx[ep0_idx + 0]);
+    serial_puts(" DW1="); serial_hex(in_ctx[ep0_idx + 1]);
+    serial_puts(" DW2="); serial_hex(in_ctx[ep0_idx + 2]);
+    serial_puts(" DW3="); serial_hex(in_ctx[ep0_idx + 3]);
+    serial_puts(" DW4="); serial_hex(in_ctx[ep0_idx + 4]);
+    serial_puts("]\n");
+    {
+        uint32_t s_dw0 = in_ctx[slot_idx + 0];
+        uint32_t e_dw1 = in_ctx[ep0_idx + 1];
+        uint32_t e_dw2 = in_ctx[ep0_idx + 2];
+        serial_puts("[DECODE SLOT speed="); serial_hex((s_dw0 >> 20) & 0xF);
+        serial_puts(" ctx_entries="); serial_hex((s_dw0 >> 27) & 0x1F);
+        serial_puts(" root_port="); serial_hex((in_ctx[slot_idx + 1] >> 16) & 0xFF);
+        serial_puts("]\n");
+        serial_puts("[DECODE EP0 type="); serial_hex((e_dw1 >> 3) & 0x7);
+        serial_puts(" cerr="); serial_hex((e_dw1 >> 1) & 0x3);
+        serial_puts(" maxpkt="); serial_hex((e_dw1 >> 16) & 0x7FFF);
+        serial_puts(" dcs="); serial_hex(e_dw2 & 1u);
+        serial_puts(" deq="); serial_hex((uint64_t)(e_dw2 & ~0xFu) | ((uint64_t)in_ctx[ep0_idx + 3] << 32));
+        serial_puts(" avg_trb="); serial_hex(in_ctx[ep0_idx + 4]);
+        serial_puts("]\n");
     }
 
     xhci_dcbaap[xhci_slot_id] = dev_ctx_phys;
 
     uint32_t new_cycle = cmd_cycle;
+    serial_puts("[CMD c"); serial_hex(xhci_ctrl_id);
+    serial_puts(" ADDR_DEV slot="); serial_hex(xhci_slot_id);
+    serial_puts(" in_ctx="); serial_hex(in_ctx_phys);
+    serial_puts(" cyc="); serial_hex(new_cycle);
+    serial_puts("]\n");
     cmd_ring[0] = (uint32_t)in_ctx_phys;
     cmd_ring[1] = (uint32_t)(in_ctx_phys >> 32);
     cmd_ring[2] = 0;
@@ -134,6 +185,8 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
 
     uint32_t db_off = *(volatile uint32_t *)(cap + 0x14);
     volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
+    serial_puts("[DB c"); serial_hex(xhci_ctrl_id);
+    serial_puts(" db=0 val=0]\n");
     db[0] = 0; /* DB_VALUE_HOST */
     (void)db[0];
     cmd_cycle ^= 1u;
@@ -146,22 +199,35 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
         if (type == 0) continue;
         if ((ev3 & 1u) != xhci_event_cycle) continue;
         if (type == 33) { ok = 1; break; }
+        xhci_log_event(e, "skip-addr");
         xhci_advance_event(e);
         e = xhci_event_idx;
     }
     if (!ok) { serial_puts("xhci: address no cce\n"); return 0; }
+    xhci_log_event(e, "match-addr");
     xhci_advance_event(e);
 
     uint32_t ev2 = event_ring[e * 4 + 2];
     uint32_t ev3 = event_ring[e * 4 + 3];
+    uint32_t ev0 = event_ring[e * 4 + 0];
+    uint32_t ev1 = event_ring[e * 4 + 1];
     uint8_t cc = (uint8_t)(ev2 >> 24);
     uint8_t slot = (uint8_t)(ev3 >> 24);
-    serial_puts("xhci: address cc=");
-    serial_hex(cc); serial_puts(" slot=");
-    serial_hex(slot); serial_puts("\n");
+    uint64_t cmd_trb_ptr = ((uint64_t)ev1 << 32) | ev0;
+    serial_puts("[CCE c"); serial_hex(xhci_ctrl_id);
+    serial_puts(" ADDR cc="); serial_hex(cc);
+    serial_puts(" slot="); serial_hex(slot);
+    serial_puts(" cmd_trb="); serial_hex(cmd_trb_ptr);
+    serial_puts(" exp="); serial_hex(cmd_phys);
+    serial_puts("]\n");
     xhci_addr_cc = cc;
     if (cc == 1) {
         xhci_dev_ctx = dev_ctx;
+        serial_puts("[DEV CTX after addr]\n");
+        for (int i = 0; i < 32; i++) {
+            serial_puts("DC["); serial_hex(i); serial_puts("]=");
+            serial_hex(dev_ctx[i]); serial_puts("\n");
+        }
     }
     return (cc == 1) ? slot : 0;
 }

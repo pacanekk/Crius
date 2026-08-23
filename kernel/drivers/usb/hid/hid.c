@@ -125,10 +125,12 @@ void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen) {
     ep1_data_phys = data_phys;
     ep1_data = (volatile uint8_t *)(vmm_get_hhdm() + data_phys);
 
-    uint32_t ep_base = 8u + (uint32_t)ep1_id * 8u;
+    uint32_t ctx_dwords = xhci_ctx_size ? 16 : 8;
+    uint32_t slot_idx = ctx_dwords;
+    uint32_t ep_base = slot_idx + (uint32_t)ep1_id * ctx_dwords;
     in_ctx[1] = 1u | (1u << (uint32_t)ep1_id); /* add slot and selected EP contexts (DW1 = Add Flags) */
-    in_ctx[8] = (xhci_pspd << 20) | ((uint32_t)ep1_id << 27);
-    in_ctx[9] = (xhci_root_port & 0xFF) << 16;
+    in_ctx[slot_idx + 0] = (xhci_pspd << 20) | ((uint32_t)ep1_id << 27);
+    in_ctx[slot_idx + 1] = (xhci_root_port & 0xFF) << 16;
     in_ctx[ep_base + 0] = (uint32_t)ep1_interval << 16;
     in_ctx[ep_base + 1] = (6u << 3) | (3u << 1) | ((uint32_t)ep1_maxpkt << 16); /* EP Type=6 (Interrupt In), CErr=3, MaxPkt */
     in_ctx[ep_base + 2] = (uint32_t)(ep1_tr_phys | 1);
