@@ -131,8 +131,8 @@ void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen) {
     in_ctx[1] = 1u | (1u << (uint32_t)ep1_id); /* add slot and selected EP contexts (DW1 = Add Flags) */
     in_ctx[slot_idx + 0] = (xhci_pspd << 20) | ((uint32_t)ep1_id << 27);
     in_ctx[slot_idx + 1] = (xhci_root_port & 0xFF) << 24; /* Root Hub Port Number at bits [31:24] */
-    in_ctx[ep_base + 0] = ((uint32_t)ep1_interval << 16) | (6u << 3); /* DW0: Interval + EP Type=6 (Interrupt IN) */
-    in_ctx[ep_base + 1] = (3u << 1) | ((uint32_t)ep1_maxpkt << 16); /* DW1: CErr=3, MaxPkt */
+    in_ctx[ep_base + 0] = ((uint32_t)ep1_interval << 16); /* DW0: Interval only */
+    in_ctx[ep_base + 1] = ((uint32_t)ep1_maxpkt << 16) | (6u << 3) | (3u << 1); /* DW1: MaxPkt, EP Type=6 (Interrupt IN), CErr=3 */
     in_ctx[ep_base + 2] = (uint32_t)(ep1_tr_phys | 1);
     in_ctx[ep_base + 3] = (uint32_t)((ep1_tr_phys | 1) >> 32);
     in_ctx[ep_base + 4] = (uint32_t)ep1_maxpkt; /* Average TRB Length = max packet size */

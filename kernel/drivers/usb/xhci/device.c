@@ -77,9 +77,11 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     uint32_t pspd = (xhci_portsc >> 10) & 0xF;
     uint32_t max_pkt = 64;
     switch (pspd) {
-        case 2: max_pkt = 8; break;      /* Low Speed (1.5M) */
-        case 4: case 5: case 6: case 7: max_pkt = 512; break; /* SuperSpeed */
-        default: max_pkt = 64; break;    /* Full Speed (1) and High Speed (3) */
+        case 1: max_pkt = 8; break;    /* Low Speed (1.5 Mbps) */
+        case 3: max_pkt = 512; break;  /* SuperSpeed */
+        case 0: max_pkt = 64; break;   /* Full Speed (12 Mbps) */
+        case 2: max_pkt = 64; break;   /* High Speed (480 Mbps) */
+        default: max_pkt = 64; break;
     }
     /* Context size: 32 bytes (CSZ=0) or 64 bytes (CSZ=1) per HCCPARAMS1 bit 2 */
     uint32_t ctx_dwords = xhci_ctx_size ? 16 : 8; /* 16 or 8 dwords per context */
@@ -116,8 +118,8 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     in_ctx[slot_idx + 0] = (pspd << 20) | (1u << 27); /* speed, context entries = 1 */
     in_ctx[slot_idx + 1] = ((root_port & 0xFF) << 24); /* Root Hub Port Number at bits [31:24] */
     /* EP0 context at offset ctx_dwords*2*4 */
-    in_ctx[ep0_idx + 0] = (3u << 3); /* EP0 DW0: EP Type=3 (Control), EP State=0 (Disabled) */
-    in_ctx[ep0_idx + 1] = ((max_pkt & 0x7FFF) << 16) | (3u << 1); /* EP0 DW1: MaxPkt, CErr=3 */
+    in_ctx[ep0_idx + 0] = 0; /* EP0 DW0: no interval for control EP */
+    in_ctx[ep0_idx + 1] = ((max_pkt & 0x7FFF) << 16) | (3u << 3) | (3u << 1); /* EP0 DW1: MaxPkt, EP Type=3 (Control), CErr=3 */
     in_ctx[ep0_idx + 2] = (uint32_t)(ep0_tr_phys | 1);
     in_ctx[ep0_idx + 3] = (uint32_t)((ep0_tr_phys | 1) >> 32);
     in_ctx[ep0_idx + 4] = 8; /* average TRB length in dword4 */
@@ -156,8 +158,7 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
         serial_puts(" ctx_entries="); serial_hex((s_dw0 >> 27) & 0x1F);
         serial_puts(" root_port="); serial_hex((in_ctx[slot_idx + 1] >> 24) & 0xFF);
         serial_puts("]\n");
-        uint32_t e_dw0 = in_ctx[ep0_idx + 0];
-        serial_puts("[DECODE EP0 type="); serial_hex((e_dw0 >> 3) & 0x7);
+        serial_puts("[DECODE EP0 type="); serial_hex((e_dw1 >> 3) & 0x7);
         serial_puts(" cerr="); serial_hex((e_dw1 >> 1) & 0x3);
         serial_puts(" maxpkt="); serial_hex((e_dw1 >> 16) & 0x7FFF);
         serial_puts(" dcs="); serial_hex(e_dw2 & 1u);
@@ -311,10 +312,7 @@ void xhci_get_config_descriptor(volatile uint8_t *cap, uint8_t caplen) {
                 ep1_maxpkt = max_pkt;
                 ep1_ifnum = cur_if;
                 uint8_t usbiv = b[i + 6];
-                uint32_t target = (uint32_t)usbiv * 8;
-                uint8_t xiv = 0;
-                while (((1u << xiv) < target) && xiv < 31) xiv++;
-                ep1_interval = xiv;
+                ep1_interval = (usbiv > 0) ? usbiv - 1 : 0; /* xHCI spec: Interval = bInterval - 1 */
                 serial_puts("xhci: ep1 num="); serial_hex(ep1_num);
                 serial_puts(" id="); serial_hex(ep1_id);
                 serial_puts(" interval="); serial_hex(ep1_interval);
@@ -326,10 +324,7 @@ void xhci_get_config_descriptor(volatile uint8_t *cap, uint8_t caplen) {
                 fb_maxpkt = max_pkt;
                 fb_if = cur_if;
                 uint8_t usbiv = b[i + 6];
-                uint32_t target = (uint32_t)usbiv * 8;
-                uint8_t xiv = 0;
-                while (((1u << xiv) < target) && xiv < 31) xiv++;
-                fb_interval = xiv;
+                fb_interval = (usbiv > 0) ? usbiv - 1 : 0; /* xHCI spec: Interval = bInterval - 1 */
                 serial_puts("xhci: fallback ep num="); serial_hex(fb_num);
                 serial_puts(" id="); serial_hex(fb_id);
                 serial_puts("\n");

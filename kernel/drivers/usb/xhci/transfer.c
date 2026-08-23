@@ -133,9 +133,9 @@ uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bR
     if (cc == 1 || cc == 13) {
         ep0_enq += 12;
         if (ep0_enq >= 1020) {
-            ep0_tr[1023] = (6u << 10) | (1u << 1) | ep0_cycle; /* Link TRB with current cycle */
+            ep0_cycle ^= 1u; /* Toggle cycle first */
+            ep0_tr[1023] = (6u << 10) | (1u << 1) | ep0_cycle; /* Link TRB with new cycle */
             ep0_enq = 0;
-            ep0_cycle ^= 1u;
         }
     }
     return cc;
@@ -239,9 +239,9 @@ uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t b
     if (cc == 1 || cc == 13) {
         ep0_enq += 8;
         if (ep0_enq >= 1020) {
-            ep0_tr[1023] = (6u << 10) | (1u << 1) | ep0_cycle; /* Link TRB with current cycle */
+            ep0_cycle ^= 1u; /* Toggle cycle first */
+            ep0_tr[1023] = (6u << 10) | (1u << 1) | ep0_cycle; /* Link TRB with new cycle */
             ep0_enq = 0;
-            ep0_cycle ^= 1u;
         }
     }
     return cc;
@@ -249,13 +249,13 @@ uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t b
 
 uint8_t xhci_prep_ep0(volatile uint8_t *cap) {
     uint64_t deq = ep0_tr_phys + (uint64_t)ep0_enq * 4;
-    uint64_t deq_val = deq | ep0_cycle;
     uint8_t scc;
 
     scc = xhci_send_command(cap, 0, 0, 0,
         (15u << 10) | (1u << 16) | ((uint32_t)xhci_slot_id << 24) | cmd_cycle);
 
-    scc = xhci_send_command(cap, (uint32_t)deq_val, (uint32_t)(deq_val >> 32), 0,
+    /* DCS bit goes in DW2 bit 0, not in the dequeue pointer */
+    scc = xhci_send_command(cap, (uint32_t)deq, (uint32_t)(deq >> 32), ep0_cycle & 1u,
         (16u << 10) | (1u << 16) | ((uint32_t)xhci_slot_id << 24) | cmd_cycle);
     return scc;
 }
