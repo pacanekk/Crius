@@ -114,10 +114,10 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     uint32_t slot_idx = ctx_dwords;       /* 8 or 16 */
     uint32_t ep0_idx = ctx_dwords * 2;    /* 16 or 32 */
     in_ctx[slot_idx + 0] = (pspd << 20) | (1u << 27); /* speed, context entries = 1 */
-    in_ctx[slot_idx + 1] = ((root_port & 0xFF) << 16);
+    in_ctx[slot_idx + 1] = ((root_port & 0xFF) << 24); /* Root Hub Port Number at bits [31:24] */
     /* EP0 context at offset ctx_dwords*2*4 */
-    in_ctx[ep0_idx + 0] = 0; /* EP0 dword0: state etc. */
-    in_ctx[ep0_idx + 1] = ((max_pkt & 0x7FFF) << 16) | (4u << 3) | (3u << 1); /* max packet, EP type control, CErr=3 */
+    in_ctx[ep0_idx + 0] = (3u << 3); /* EP0 DW0: EP Type=3 (Control), EP State=0 (Disabled) */
+    in_ctx[ep0_idx + 1] = ((max_pkt & 0x7FFF) << 16) | (3u << 1); /* EP0 DW1: MaxPkt, CErr=3 */
     in_ctx[ep0_idx + 2] = (uint32_t)(ep0_tr_phys | 1);
     in_ctx[ep0_idx + 3] = (uint32_t)((ep0_tr_phys | 1) >> 32);
     in_ctx[ep0_idx + 4] = 8; /* average TRB length in dword4 */
@@ -154,9 +154,10 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
         uint32_t e_dw2 = in_ctx[ep0_idx + 2];
         serial_puts("[DECODE SLOT speed="); serial_hex((s_dw0 >> 20) & 0xF);
         serial_puts(" ctx_entries="); serial_hex((s_dw0 >> 27) & 0x1F);
-        serial_puts(" root_port="); serial_hex((in_ctx[slot_idx + 1] >> 16) & 0xFF);
+        serial_puts(" root_port="); serial_hex((in_ctx[slot_idx + 1] >> 24) & 0xFF);
         serial_puts("]\n");
-        serial_puts("[DECODE EP0 type="); serial_hex((e_dw1 >> 3) & 0x7);
+        uint32_t e_dw0 = in_ctx[ep0_idx + 0];
+        serial_puts("[DECODE EP0 type="); serial_hex((e_dw0 >> 3) & 0x7);
         serial_puts(" cerr="); serial_hex((e_dw1 >> 1) & 0x3);
         serial_puts(" maxpkt="); serial_hex((e_dw1 >> 16) & 0x7FFF);
         serial_puts(" dcs="); serial_hex(e_dw2 & 1u);

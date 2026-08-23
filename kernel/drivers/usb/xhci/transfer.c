@@ -133,9 +133,9 @@ uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bR
     if (cc == 1 || cc == 13) {
         ep0_enq += 12;
         if (ep0_enq >= 1020) {
+            ep0_tr[1023] = (6u << 10) | (1u << 1) | ep0_cycle; /* Link TRB with current cycle */
             ep0_enq = 0;
             ep0_cycle ^= 1u;
-            ep0_tr[1023] = (6u << 10) | (1u << 1) | ep0_cycle;
         }
     }
     return cc;
@@ -239,9 +239,9 @@ uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t b
     if (cc == 1 || cc == 13) {
         ep0_enq += 8;
         if (ep0_enq >= 1020) {
+            ep0_tr[1023] = (6u << 10) | (1u << 1) | ep0_cycle; /* Link TRB with current cycle */
             ep0_enq = 0;
             ep0_cycle ^= 1u;
-            ep0_tr[1023] = (6u << 10) | (1u << 1) | ep0_cycle;
         }
     }
     return cc;

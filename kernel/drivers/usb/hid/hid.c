@@ -130,9 +130,9 @@ void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen) {
     uint32_t ep_base = slot_idx + (uint32_t)ep1_id * ctx_dwords;
     in_ctx[1] = 1u | (1u << (uint32_t)ep1_id); /* add slot and selected EP contexts (DW1 = Add Flags) */
     in_ctx[slot_idx + 0] = (xhci_pspd << 20) | ((uint32_t)ep1_id << 27);
-    in_ctx[slot_idx + 1] = (xhci_root_port & 0xFF) << 16;
-    in_ctx[ep_base + 0] = (uint32_t)ep1_interval << 16;
-    in_ctx[ep_base + 1] = (6u << 3) | (3u << 1) | ((uint32_t)ep1_maxpkt << 16); /* EP Type=6 (Interrupt In), CErr=3, MaxPkt */
+    in_ctx[slot_idx + 1] = (xhci_root_port & 0xFF) << 24; /* Root Hub Port Number at bits [31:24] */
+    in_ctx[ep_base + 0] = ((uint32_t)ep1_interval << 16) | (6u << 3); /* DW0: Interval + EP Type=6 (Interrupt IN) */
+    in_ctx[ep_base + 1] = (3u << 1) | ((uint32_t)ep1_maxpkt << 16); /* DW1: CErr=3, MaxPkt */
     in_ctx[ep_base + 2] = (uint32_t)(ep1_tr_phys | 1);
     in_ctx[ep_base + 3] = (uint32_t)((ep1_tr_phys | 1) >> 32);
     in_ctx[ep_base + 4] = (uint32_t)ep1_maxpkt; /* Average TRB Length = max packet size */
@@ -147,11 +147,12 @@ void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen) {
     ep1_tr[0] = (uint32_t)ep1_data_phys;
     ep1_tr[1] = (uint32_t)(ep1_data_phys >> 32);
     ep1_tr[2] = ep1_maxpkt;
-    ep1_tr[3] = (1u << 10) | (1u << 5) | ep1_cycle;
-    ep1_tr[1020] = (uint32_t)ep1_tr_phys;
-    ep1_tr[1021] = (uint32_t)(ep1_tr_phys >> 32);
-    ep1_tr[1022] = 0;
-    ep1_tr[1023] = (6u << 10) | (1u << 1) | ep1_cycle;
+    ep1_tr[3] = (1u << 10) | (1u << 5) | ep1_cycle; /* Normal TRB, IOC=1 */
+    /* Link TRB at index 1 (right after data TRB) to wrap ring */
+    ep1_tr[4] = (uint32_t)ep1_tr_phys;
+    ep1_tr[5] = (uint32_t)(ep1_tr_phys >> 32);
+    ep1_tr[6] = 0;
+    ep1_tr[7] = (6u << 10) | (1u << 1) | ep1_cycle; /* Link TRB, TC=1 */
 
     uint32_t db_off = *(volatile uint32_t *)(cap + 0x14);
     volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
@@ -192,8 +193,10 @@ int usb_kbd_poll(void) {
     uint8_t new[8];
     for (int i = 0; i < 8; i++) new[i] = ep1_data[i];
 
-    uint32_t ep_state = xhci_dev_ctx[24] & 0x7u;
-    uint32_t dcs = xhci_dev_ctx[26] & 1u;
+    uint32_t ctx_dwords = xhci_ctx_size ? 16 : 8;
+    uint32_t ep1_ctx_base = ctx_dwords + (uint32_t)ep1_id * ctx_dwords;
+    uint32_t ep_state = xhci_dev_ctx[ep1_ctx_base + 0] & 0x7u;
+    uint32_t dcs = xhci_dev_ctx[ep1_ctx_base + 2] & 1u;
     serial_puts("xhci: rep ep_state="); serial_hex(ep_state);
     serial_puts(" dcs="); serial_hex(dcs); serial_puts(" ");
     for (int i = 0; i < 8; i++) { serial_hex(new[i]); serial_puts(" "); }
@@ -232,18 +235,18 @@ int usb_kbd_poll(void) {
 
     for (int i = 0; i < 8; i++) usb_kbd_prev[i] = new[i];
 
-    /* Toggle cycle bit for next transfer — controller toggles consumer cycle
-     * after processing the Link TRB, so producer cycle must match */
+    /* Toggle cycle: Link TRB at [1] with TC=1 toggles controller cycle,
+     * so producer cycle must also toggle to match */
     ep1_cycle ^= 1u;
     ep1_tr[0] = (uint32_t)ep1_data_phys;
     ep1_tr[1] = (uint32_t)(ep1_data_phys >> 32);
     ep1_tr[2] = ep1_maxpkt;
-    ep1_tr[3] = (1u << 10) | (1u << 5) | ep1_cycle;
-    /* Link TRB at end of ring (TRB 255 = dword 1020) */
-    ep1_tr[1020] = (uint32_t)ep1_tr_phys;
-    ep1_tr[1021] = (uint32_t)(ep1_tr_phys >> 32);
-    ep1_tr[1022] = 0;
-    ep1_tr[1023] = (6u << 10) | (1u << 1) | ep1_cycle;
+    ep1_tr[3] = (1u << 10) | (1u << 5) | ep1_cycle; /* Normal TRB, IOC=1 */
+    /* Link TRB at index 1 wraps ring back to TRB[0] */
+    ep1_tr[4] = (uint32_t)ep1_tr_phys;
+    ep1_tr[5] = (uint32_t)(ep1_tr_phys >> 32);
+    ep1_tr[6] = 0;
+    ep1_tr[7] = (6u << 10) | (1u << 1) | ep1_cycle; /* Link TRB, TC=1 */
 
     uint32_t db_off = *(volatile uint32_t *)(xhci_cap + 0x14);
     volatile uint32_t *db = (volatile uint32_t *)(xhci_cap + (db_off & ~0x03u));
