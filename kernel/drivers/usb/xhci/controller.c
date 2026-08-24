@@ -537,7 +537,7 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
 
     op[12] = (uint32_t)dcbaap_phys;
     op[13] = (uint32_t)(dcbaap_phys >> 32);
-    op[6] = (uint32_t)(cmd_phys | 1);
+    op[6] = (uint32_t)(cmd_phys | 2); /* RCS=1 (Ring Cycle State, bit 1) */
     op[7] = (uint32_t)(cmd_phys >> 32);
     /* Config Register: set MaxSlotsEN to actual MaxSlots from HCSParams1 */
     op[14] = max_slots;

@@ -77,23 +77,23 @@ void xhci_setup_hid(volatile uint8_t *cap, uint8_t caplen) {
     uint8_t cc;
 
     if (ep1_id == 0 || ep1_ifnum == 0xFF) return;
-    if (xhci_prep_ep0(cap) != 1) return;
+    if (xhci_prep_ep0(cap) != 0) return;
     cc = xhci_control_out(cap, 0x00, 0x09, xhci_config_value, 0); /* SET_CONFIGURATION */
     xhci_set_cfg_cc = cc;
     serial_puts("xhci: set config cc="); serial_hex(cc); serial_puts("\n");
-    if (cc != 1) return;
+    if (cc != 0) return;
 
-    if (xhci_prep_ep0(cap) != 1) return;
+    if (xhci_prep_ep0(cap) != 0) return;
     cc = xhci_control_out(cap, 0x21, 0x0B, 0, ep1_ifnum); /* SET_PROTOCOL (boot) */
     xhci_set_proto_cc = cc;
     serial_puts("xhci: set protocol cc="); serial_hex(cc); serial_puts("\n");
-    if (cc != 1) serial_puts("xhci: set protocol not supported, continuing\n");
+    if (cc != 0) serial_puts("xhci: set protocol not supported, continuing\n");
 
-    if (xhci_prep_ep0(cap) != 1) return;
+    if (xhci_prep_ep0(cap) != 0) return;
     cc = xhci_control_out(cap, 0x21, 0x0A, 0, ep1_ifnum); /* SET_IDLE (duration=0) */
     xhci_set_idle_cc = cc;
     serial_puts("xhci: set idle cc="); serial_hex(cc); serial_puts("\n");
-    if (cc != 1) serial_puts("xhci: set idle not supported, continuing\n");
+    if (cc != 0) serial_puts("xhci: set idle not supported, continuing\n");
 
     uint64_t report_phys = pmm_alloc_page();
     if (report_phys == 0) { serial_puts("xhci: no report page\n"); return; }
@@ -141,7 +141,7 @@ void xhci_configure_hid(volatile uint8_t *cap, uint8_t caplen) {
         (12u << 10) | ((uint32_t)xhci_slot_id << 24) | cmd_cycle);
     xhci_cfg_ep_cc = ccc;
     serial_puts("xhci: configure ep1 cc="); serial_hex(ccc); serial_puts("\n");
-    if (ccc != 1) return;
+    if (ccc != 0) return;
 
     ep1_cycle = 1;
     ep1_tr[0] = (uint32_t)ep1_data_phys;
@@ -182,7 +182,7 @@ int usb_kbd_poll(void) {
             continue;
         }
         xhci_advance_event(e);
-        if (ep != ep1_id || (cc != 1 && cc != 6)) {
+        if (ep != ep1_id || (cc != 0 && cc != 6)) {
             serial_puts("xhci: report ep="); serial_hex(ep);
             serial_puts(" cc="); serial_hex(cc); serial_puts("\n");
             return 0;

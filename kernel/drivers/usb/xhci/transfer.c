@@ -125,12 +125,12 @@ uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bR
     serial_puts(" exp_status_trb="); serial_hex(ep0_tr_phys + (uint64_t)(enq + 8) * 4);
     serial_puts("]\n");
 
-    if (cc != 1 && cc != 13) {
+    if (cc != 0 && cc != 13) {
         serial_puts("xhci: control in FAIL cc=");
         serial_hex(cc); serial_puts("\n");
     }
 
-    if (cc == 1 || cc == 13) {
+    if (cc == 0 || cc == 13) {
         ep0_enq += 12;
         if (ep0_enq >= 1020) {
             ep0_cycle ^= 1u; /* Toggle cycle first */
@@ -236,7 +236,7 @@ uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t b
     serial_puts(" len="); serial_hex(xfer_len);
     serial_puts(" exp_status_trb="); serial_hex(ep0_tr_phys + (uint64_t)(enq + 4) * 4);
     serial_puts("]\n");
-    if (cc == 1 || cc == 13) {
+    if (cc == 0 || cc == 13) {
         ep0_enq += 8;
         if (ep0_enq >= 1020) {
             ep0_cycle ^= 1u; /* Toggle cycle first */
