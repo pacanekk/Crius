@@ -2,6 +2,12 @@
 # Crius = kernel, Nexus = userspace
 # Requires: gcc, xorriso, qemu-system-x86_64, make, curl
 
+# ===== Version =====
+CRIUS_VERSION_MAJOR = 0
+CRIUS_VERSION_MINOR = 1
+CRIUS_VERSION_PATCH = 0
+CRIUS_VERSION_NAME  = Genesis
+
 # Directories
 BUILD_DIR    = build
 ISO_DIR      = iso_root
@@ -23,8 +29,17 @@ all: crius.iso
 $(FREESTANDING_HDRS):
 	git clone https://github.com/osdev0/freestanding-c-hdrs.git freestanding-c-hdrs
 
+# Generate version.h from template
+VERSION_H = kernel/include/version.h
+$(VERSION_H): kernel/include/version.h.in
+	sed -e 's/@CRIUS_VERSION_MAJOR@/$(CRIUS_VERSION_MAJOR)/g' \
+	    -e 's/@CRIUS_VERSION_MINOR@/$(CRIUS_VERSION_MINOR)/g' \
+	    -e 's/@CRIUS_VERSION_PATCH@/$(CRIUS_VERSION_PATCH)/g' \
+	    -e 's/@CRIUS_VERSION_NAME@/$(CRIUS_VERSION_NAME)/g' \
+	    $< > $@
+
 # Build kernel and nexus separately
-kernel: $(FREESTANDING_HDRS)
+kernel: $(VERSION_H) $(FREESTANDING_HDRS)
 	$(MAKE) -C kernel FREESTANDING_HDRS=../$(FREESTANDING_HDRS)
 
 nexus: $(FREESTANDING_HDRS)
@@ -83,7 +98,7 @@ disk.img:
 
 # Clean
 clean:
-	rm -rf $(BUILD_DIR) $(ISO_DIR) crius.iso limine-bin limine-src freestanding-c-hdrs $(TOOLS_DIR)/prog_data.c
+	rm -rf $(BUILD_DIR) $(ISO_DIR) crius.iso limine-bin limine-src freestanding-c-hdrs $(TOOLS_DIR)/prog_data.c $(VERSION_H)
 	$(MAKE) -C kernel clean
 	$(MAKE) -C nexus clean
 

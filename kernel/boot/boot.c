@@ -22,6 +22,7 @@
 #include "process/elf_exec.h"
 #include "arch/cpu.h"
 #include "boot/boot.h"
+#include "version.h"
 
 int has_smap = 0;
 int has_smep = 0;
@@ -66,6 +67,7 @@ void hcf(void) {
 
 void boot_early_init(void) {
     serial_init();
+    serial_puts("Crius v" CRIUS_VERSION_STR " \"" CRIUS_VERSION_NAME "\"\n");
     serial_puts("Crius kernel successfully booted\n");
 
     gdt_init();
@@ -138,6 +140,7 @@ void boot_early_init(void) {
     if (fb_resp != NULL && fb_resp->framebuffer_count > 0) {
         fb_init(fb_resp->framebuffers[0]);
         fb_clear(0x00000000);
+        fb_puts("Crius v" CRIUS_VERSION_STR " \"" CRIUS_VERSION_NAME "\"\n", 0x00FFFFFF, 0x00000000);
         fb_puts("Crius kernel successfully booted\n", 0x00FFFFFF, 0x00000000);
         has_fb = 1;
     }
