@@ -13,8 +13,7 @@ int xhci_enable_slot(volatile uint8_t *cap) {
     if (!cmd_ring) { serial_puts("xhci: cmd ring not set\n"); return 0; }
 
     /* ENABLE_SLOT: TRB type=9, all data fields=0, cycle=cmd_cycle.
-     * Per Linux xhci_queue_slot_control: field0=0, field1=0, field2=0,
-     * field3 = TRB_TYPE(9) | cycle_state */
+     * field0=0, field1=0, field2=0, field3 = TRB_TYPE(9) | cycle_state */
     uint32_t cyc = cmd_cycle;
     serial_puts("[CMD c"); serial_hex(xhci_ctrl_id);
     serial_puts(" ENABLE_SLOT cyc="); serial_hex(cyc);
@@ -151,7 +150,7 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     serial_puts("]\n");
 
     /* ADDR_DEV: TRB type=11, field0=low ctx ptr, field1=high ctx ptr,
-     * field3 = TRB_TYPE(11) | SLOT_ID | cycle. Per Linux xhci_queue_address_device. */
+     * field3 = TRB_TYPE(11) | SLOT_ID | cycle. */
     uint8_t cc = xhci_send_command(cap,
         (uint32_t)in_ctx_phys,
         (uint32_t)(in_ctx_phys >> 32),

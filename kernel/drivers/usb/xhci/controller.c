@@ -559,7 +559,7 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
     cmd_ring = (volatile uint32_t *)(vmm_get_hhdm() + cmd_phys);
     memset((void *)cmd_ring, 0, 4096);
     /* Setup Link TRB at slot 255 (TRB index 255 = dword offset 1020-1023).
-     * Per xHCI spec 4.11.5.1 and Linux xhci_initialize_ring_segments:
+     * Per xHCI spec 4.11.5.1:
      * - Link TRB type = 6, Toggle Cycle (TC) bit = 1
      * - Cycle bit = 0 (CCS, opposite of PCS=1) so controller skips it initially
      * - segment_ptr points back to start of ring (cmd_phys)
@@ -615,23 +615,21 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
     xhci_iman = iman;
     *erstsz = 1;
     *erstba = erst_phys;
-    *erdp = event_phys; /* DESI=0 */
+    *erdp = event_phys & ~0x7ULL; /* DESI=0, EHB=0 */
     xhci_event_idx = 0;
     xhci_event_cycle = 1;
     cmd_cycle = 1;
     cmd_enq = 0;
 
-    /* Config Register: set MaxSlotsEn (per Linux xhci_init order) */
+    /* Config Register: set MaxSlotsEn */
     op[14] = max_slots;
-    /* DCBAAP: write low dword first, then high (lo_hi_writeq per Linux) */
+    /* DCBAAP: write low dword first, then high */
     op[12] = (uint32_t)dcbaap_phys;
     op[13] = (uint32_t)(dcbaap_phys >> 32);
 
     /* CRCR: must be written when controller is halted (HCH=1 in USBSTS).
      * Per xHCI spec 5.4.5: CRCR shall only be updated when HCH='1'.
-     * Per Linux xhci_set_cmd_ring_deq: write pointer + cycle_state.
-     * Don't preserve old status bits - after reset they should be 0,
-     * and preserving CA/CS could cause the controller to abort the ring. */
+     * Write pointer + cycle_state, no old status bits preserved. */
     uint32_t usbsts = op[1];
     xhci_fb_hch_before = (uint8_t)((usbsts >> 0) & 1u); /* HCH = bit 0 */
     if (!(usbsts & 1u)) {
@@ -662,7 +660,7 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
     }
     xhci_fb_cmd_phys = (uint32_t)cmd_phys;
 
-    *iman = (1u << 1); /* IE */
+    *iman = (1u << 0) | (1u << 1); /* Clear IP (W1C) + set IE */
 
     /* Debug: read back CRCR and DCBAAP */
     uint32_t crcr_lo = op[6];

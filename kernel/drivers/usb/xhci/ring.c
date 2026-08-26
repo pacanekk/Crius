@@ -56,8 +56,8 @@ void xhci_advance_event(int e) {
         xhci_event_idx = 0;
         xhci_event_cycle ^= 1u;
     }
-    /* Clear EHB (bit 3) by writing ERDP without it, acknowledging event processing */
-    uint64_t new_erdp = (event_phys + (uint64_t)xhci_event_idx * 16);
+    /* Write ERDP with bits 2:0 cleared (EHB/DESI) */
+    uint64_t new_erdp = (event_phys + (uint64_t)xhci_event_idx * 16) & ~0x7ULL;
     *xhci_erdp = new_erdp;
 }
 uint32_t cmd_cycle = 1;
@@ -101,8 +101,7 @@ uint8_t xhci_send_command(volatile uint8_t *cap, uint32_t word0, uint32_t word1,
     serial_puts("]\n");
 
     /* Write TRB at current enqueue position.
-     * Write fields 0-2 first, then barrier, then field 3 with cycle bit.
-     * This matches Linux queue_trb: wmb() before writing field[3]. */
+     * Write fields 0-2 first, then barrier, then field 3 with cycle bit. */
     int off = cmd_enq * 4;
     cmd_ring[off + 0] = word0;
     cmd_ring[off + 1] = word1;
@@ -111,12 +110,11 @@ uint8_t xhci_send_command(volatile uint8_t *cap, uint32_t word0, uint32_t word1,
     cmd_ring[off + 3] = word3;
 
     /* Advance enqueue. If next TRB is the Link TRB (slot 255), toggle its
-     * cycle bit and wrap around. Per Linux inc_enq_past_link: XOR the Link
-     * TRB cycle bit, then toggle cycle_state. */
+     * cycle bit and wrap around: XOR the Link TRB cycle bit, then toggle
+     * cycle_state. */
     cmd_enq++;
     if (cmd_enq >= 255) {
-        /* Toggle Link TRB cycle bit and producer cycle state,
-         * matching Linux inc_enq_past_link. */
+        /* Toggle Link TRB cycle bit and producer cycle state. */
         cmd_ring[1023] ^= 1u;
         cmd_cycle ^= 1u;
         cmd_enq = 0;
@@ -126,7 +124,7 @@ uint8_t xhci_send_command(volatile uint8_t *cap, uint32_t word0, uint32_t word1,
     uint32_t db_off = *(volatile uint32_t *)(cap + 0x14);
     volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
     db[0] = 0; /* Ring command doorbell */
-    (void)db[0]; /* Flush posted write, per Linux xhci_ring_cmd_db */
+    (void)db[0]; /* Flush posted write */
 
     int e = xhci_event_idx;
     int ok = 0;

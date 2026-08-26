@@ -236,8 +236,7 @@ int usb_kbd_poll(void) {
 
     for (int i = 0; i < 8; i++) usb_kbd_prev[i] = new[i];
 
-    /* Toggle cycle: XOR Link TRB cycle bit and toggle producer cycle state,
-     * matching Linux inc_enq_past_link behavior. */
+    /* Toggle cycle: XOR Link TRB cycle bit and toggle producer cycle state. */
     ep1_tr[7] ^= 1u; /* XOR Link TRB cycle bit */
     ep1_cycle ^= 1u; /* Toggle producer cycle state */
     ep1_tr[0] = (uint32_t)ep1_data_phys;
