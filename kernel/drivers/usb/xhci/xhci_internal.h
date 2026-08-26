@@ -35,6 +35,11 @@ extern uint64_t event_phys;
 extern uint32_t cmd_cycle;
 extern volatile uint32_t *cmd_ring;
 extern uint64_t cmd_phys;
+extern int cmd_enq;
+extern uint8_t xhci_fb_cmd_enq;
+extern uint8_t xhci_fb_cmd_cyc;
+extern uint8_t xhci_fb_last_cmd_type;
+extern uint8_t xhci_fb_last_cmd_cc;
 
 extern uint8_t xhci_first_if_class;
 extern uint8_t xhci_first_if_sub;

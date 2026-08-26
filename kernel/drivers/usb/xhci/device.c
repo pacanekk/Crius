@@ -12,77 +12,33 @@ uint8_t xhci_config_value = 1;
 int xhci_enable_slot(volatile uint8_t *cap) {
     if (!cmd_ring) { serial_puts("xhci: cmd ring not set\n"); return 0; }
 
+    /* ENABLE_SLOT: TRB type=9, all data fields=0, cycle=cmd_cycle.
+     * Per Linux xhci_queue_slot_control: field0=0, field1=0, field2=0,
+     * field3 = TRB_TYPE(9) | cycle_state */
     uint32_t cyc = cmd_cycle;
     serial_puts("[CMD c"); serial_hex(xhci_ctrl_id);
     serial_puts(" ENABLE_SLOT cyc="); serial_hex(cyc);
     serial_puts(" cmd_phys="); serial_hex(cmd_phys);
     serial_puts("]\n");
-    cmd_ring[0] = 0;
-    cmd_ring[1] = 0;
-    cmd_ring[2] = 0;
-    cmd_ring[3] = (9u << 10) | cyc;
 
-    cmd_ring[4] = (uint32_t)cmd_phys;
-    cmd_ring[5] = (uint32_t)(cmd_phys >> 32);
-    cmd_ring[6] = 0;
-    cmd_ring[7] = (6u << 10) | (1u << 1) | cyc;
+    uint8_t cc = xhci_send_command(cap, 0, 0, 0, (9u << 10) | cyc);
 
-    /* Debug: print full TRB before doorbell */
-    serial_puts("[ENABLE_SLOT TRB\n");
-    serial_puts("  DW0="); serial_hex(cmd_ring[0]);
-    serial_puts("  DW1="); serial_hex(cmd_ring[1]);
-    serial_puts("  DW2="); serial_hex(cmd_ring[2]);
-    serial_puts("  DW3="); serial_hex(cmd_ring[3]);
-    serial_puts("  cyc="); serial_hex(cyc);
-    serial_puts(" type="); serial_hex((cmd_ring[3] >> 10) & 0x3F);
-    serial_puts("]\n");
-    serial_puts("[LINK TRB\n");
-    serial_puts("  DW0="); serial_hex(cmd_ring[4]);
-    serial_puts("  DW1="); serial_hex(cmd_ring[5]);
-    serial_puts("  DW2="); serial_hex(cmd_ring[6]);
-    serial_puts("  DW3="); serial_hex(cmd_ring[7]);
-    serial_puts("  tc="); serial_hex((cmd_ring[7] >> 1) & 1u);
-    serial_puts("]\n");
-    asm volatile("mfence" ::: "memory");
-    uint32_t db_off = *(volatile uint32_t *)(cap + 0x14);
-    volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
-    serial_puts("[DB c"); serial_hex(xhci_ctrl_id);
-    serial_puts(" db=0 val=0]\n");
-    db[0] = 0; /* DB_VALUE_HOST */
-    (void)db[0];
-    cmd_cycle ^= 1u;
-
-    int e = xhci_event_idx;
-    int ok = 0;
-    for (int i = 0; i < 10000000; i++) {
-        uint32_t ev3 = event_ring[e * 4 + 3];
-        uint8_t type = (uint8_t)((ev3 >> 10) & 0x3F);
-        if (type == 0) continue;
-        if ((ev3 & 1u) != xhci_event_cycle) continue;
-        if (type == 33) { ok = 1; break; }
-        xhci_log_event(e, "skip-enable");
-        xhci_advance_event(e);
-        e = xhci_event_idx;
+    /* Find slot ID from event: scan event ring for the CCE matching our TRB */
+    uint8_t slot_id = 0;
+    if (cc == 0) {
+        /* The slot ID is in the CCE event DW3 bits [31:24].
+         * xhci_send_command already advanced past it, so we need to look at
+         * the event just before current index. */
+        int prev_e = xhci_event_idx - 1;
+        if (prev_e < 0) prev_e = 255;
+        uint32_t ev3 = event_ring[prev_e * 4 + 3];
+        slot_id = (uint8_t)(ev3 >> 24);
     }
-    if (!ok) { serial_puts("xhci: enable slot no event\n"); return 0; }
-    xhci_log_event(e, "match-enable");
-    xhci_advance_event(e);
 
-    uint32_t ev2 = event_ring[e * 4 + 2];
-    uint32_t ev3 = event_ring[e * 4 + 3];
-    uint32_t ev0 = event_ring[e * 4 + 0];
-    uint32_t ev1 = event_ring[e * 4 + 1];
-    uint8_t cc = (uint8_t)(ev2 >> 24);
-    uint8_t slot_id = (uint8_t)(ev3 >> 24);
-    uint64_t cmd_trb_ptr = ((uint64_t)ev1 << 32) | ev0;
     xhci_slot_cc = cc;
-    xhci_slot_ev2 = ev2;
-    xhci_slot_ev3 = ev3;
     serial_puts("[CCE c"); serial_hex(xhci_ctrl_id);
     serial_puts(" ENABLE cc="); serial_hex(cc);
     serial_puts(" slot="); serial_hex(slot_id);
-    serial_puts(" cmd_trb="); serial_hex(cmd_trb_ptr);
-    serial_puts(" exp="); serial_hex(cmd_phys);
     serial_puts("]\n");
     return (cc == 0) ? slot_id : 0;
 }
@@ -94,10 +50,11 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     uint32_t pspd = (xhci_portsc >> 10) & 0xF;
     uint32_t max_pkt = 64;
     switch (pspd) {
-        case 1: max_pkt = 8; break;    /* Low Speed (1.5 Mbps) */
-        case 3: max_pkt = 512; break;  /* SuperSpeed */
-        case 0: max_pkt = 64; break;   /* Full Speed (12 Mbps) */
-        case 2: max_pkt = 64; break;   /* High Speed (480 Mbps) */
+        case 1: max_pkt = 64; break;   /* Full Speed (12 Mbps) */
+        case 2: max_pkt = 8; break;    /* Low Speed (1.5 Mbps) */
+        case 3: max_pkt = 64; break;   /* High Speed (480 Mbps) */
+        case 4: max_pkt = 512; break;  /* SuperSpeed */
+        case 5: max_pkt = 512; break;  /* SuperSpeed Plus */
         default: max_pkt = 64; break;
     }
     /* Context size: 32 bytes (CSZ=0) or 64 bytes (CSZ=1) per HCCPARAMS1 bit 2 */
@@ -124,7 +81,7 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     ep0_tr[1020] = (uint32_t)ep0_tr_phys;
     ep0_tr[1021] = (uint32_t)(ep0_tr_phys >> 32);
     ep0_tr[1022] = 0;
-    ep0_tr[1023] = (6u << 10) | (1u << 1) | 1u; /* Link TRB with TC, cycle=1 */
+    ep0_tr[1023] = (6u << 10) | (1u << 1) | 0u; /* Link TRB with TC=1, cycle=0 (opposite of PCS=1) */
     ep0_cycle = 1;
     ep0_enq = 0;
 
@@ -133,10 +90,10 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     uint32_t slot_idx = ctx_dwords;       /* 8 or 16 */
     uint32_t ep0_idx = ctx_dwords * 2;    /* 16 or 32 */
     in_ctx[slot_idx + 0] = (pspd << 20) | (1u << 27); /* speed, context entries = 1 */
-    in_ctx[slot_idx + 1] = ((root_port & 0xFF) << 24); /* Root Hub Port Number at bits [31:24] */
+    in_ctx[slot_idx + 1] = ((root_port & 0xFF) << 16); /* Root Hub Port Number at bits [23:16] per ROOT_HUB_PORT */
     /* EP0 context at offset ctx_dwords*2*4 */
     in_ctx[ep0_idx + 0] = 0; /* EP0 DW0: no interval for control EP */
-    in_ctx[ep0_idx + 1] = ((max_pkt & 0x7FFF) << 16) | (3u << 3) | (3u << 1); /* EP0 DW1: MaxPkt, EP Type=3 (Control), CErr=3 */
+    in_ctx[ep0_idx + 1] = ((max_pkt & 0xFFFF) << 16) | (4u << 3) | (3u << 1); /* EP0 DW1: MaxPkt, EP Type=4 (CTRL_EP), CErr=3 */
     in_ctx[ep0_idx + 2] = (uint32_t)(ep0_tr_phys | 1);
     in_ctx[ep0_idx + 3] = (uint32_t)((ep0_tr_phys | 1) >> 32);
     in_ctx[ep0_idx + 4] = 8; /* average TRB length in dword4 */
@@ -173,7 +130,7 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
         uint32_t e_dw2 = in_ctx[ep0_idx + 2];
         serial_puts("[DECODE SLOT speed="); serial_hex((s_dw0 >> 20) & 0xF);
         serial_puts(" ctx_entries="); serial_hex((s_dw0 >> 27) & 0x1F);
-        serial_puts(" root_port="); serial_hex((in_ctx[slot_idx + 1] >> 24) & 0xFF);
+        serial_puts(" root_port="); serial_hex((in_ctx[slot_idx + 1] >> 16) & 0xFF);
         serial_puts("]\n");
         serial_puts("[DECODE EP0 type="); serial_hex((e_dw1 >> 3) & 0x7);
         serial_puts(" cerr="); serial_hex((e_dw1 >> 1) & 0x3);
@@ -192,53 +149,19 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     serial_puts(" in_ctx="); serial_hex(in_ctx_phys);
     serial_puts(" cyc="); serial_hex(new_cycle);
     serial_puts("]\n");
-    cmd_ring[0] = (uint32_t)in_ctx_phys;
-    cmd_ring[1] = (uint32_t)(in_ctx_phys >> 32);
-    cmd_ring[2] = 0;
-    cmd_ring[3] = (11u << 10) | ((uint32_t)xhci_slot_id << 24) | new_cycle;
 
-    cmd_ring[4] = (uint32_t)cmd_phys;
-    cmd_ring[5] = (uint32_t)(cmd_phys >> 32);
-    cmd_ring[6] = 0;
-    cmd_ring[7] = (6u << 10) | (1u << 1) | new_cycle;
+    /* ADDR_DEV: TRB type=11, field0=low ctx ptr, field1=high ctx ptr,
+     * field3 = TRB_TYPE(11) | SLOT_ID | cycle. Per Linux xhci_queue_address_device. */
+    uint8_t cc = xhci_send_command(cap,
+        (uint32_t)in_ctx_phys,
+        (uint32_t)(in_ctx_phys >> 32),
+        0,
+        (11u << 10) | ((uint32_t)xhci_slot_id << 24) | new_cycle);
 
-    asm volatile("mfence" ::: "memory");
-    uint32_t db_off = *(volatile uint32_t *)(cap + 0x14);
-    volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
-    serial_puts("[DB c"); serial_hex(xhci_ctrl_id);
-    serial_puts(" db=0 val=0]\n");
-    db[0] = 0; /* DB_VALUE_HOST */
-    (void)db[0];
-    cmd_cycle ^= 1u;
-
-    int e = xhci_event_idx;
-    int ok = 0;
-    for (int i = 0; i < 10000000; i++) {
-        uint32_t ev3 = event_ring[e * 4 + 3];
-        uint8_t type = (uint8_t)((ev3 >> 10) & 0x3F);
-        if (type == 0) continue;
-        if ((ev3 & 1u) != xhci_event_cycle) continue;
-        if (type == 33) { ok = 1; break; }
-        xhci_log_event(e, "skip-addr");
-        xhci_advance_event(e);
-        e = xhci_event_idx;
-    }
-    if (!ok) { serial_puts("xhci: address no cce\n"); return 0; }
-    xhci_log_event(e, "match-addr");
-    xhci_advance_event(e);
-
-    uint32_t ev2 = event_ring[e * 4 + 2];
-    uint32_t ev3 = event_ring[e * 4 + 3];
-    uint32_t ev0 = event_ring[e * 4 + 0];
-    uint32_t ev1 = event_ring[e * 4 + 1];
-    uint8_t cc = (uint8_t)(ev2 >> 24);
-    uint8_t slot = (uint8_t)(ev3 >> 24);
-    uint64_t cmd_trb_ptr = ((uint64_t)ev1 << 32) | ev0;
+    uint8_t slot = xhci_slot_id;
     serial_puts("[CCE c"); serial_hex(xhci_ctrl_id);
     serial_puts(" ADDR cc="); serial_hex(cc);
     serial_puts(" slot="); serial_hex(slot);
-    serial_puts(" cmd_trb="); serial_hex(cmd_trb_ptr);
-    serial_puts(" exp="); serial_hex(cmd_phys);
     serial_puts("]\n");
     xhci_addr_cc = cc;
     if (cc == 0) {

@@ -15,6 +15,7 @@ int xhci_event_idx = 0;
 uint32_t xhci_event_cycle = 1;
 volatile uint64_t *xhci_erdp;
 int xhci_ctrl_id = 0;
+int cmd_enq = 0; /* enqueue index in TRBs (0..255), points to next free TRB */
 
 void xhci_log_event(int e, const char *ctx) {
     if (!event_ring) return;
@@ -85,33 +86,47 @@ uint8_t xhci_send_command(volatile uint8_t *cap, uint32_t word0, uint32_t word1,
     if (!cmd_ring) { serial_puts("xhci: cmd ring not set\n"); return 0; }
 
     uint8_t cmd_type = (uint8_t)((word3 >> 10) & 0x3F);
+    uint32_t cyc = word3 & 1u;
+    xhci_fb_last_cmd_type = cmd_type;
+    xhci_fb_cmd_enq = (uint8_t)cmd_enq;
+    xhci_fb_cmd_cyc = (uint8_t)cyc;
     serial_puts("[CMD c"); serial_hex(xhci_ctrl_id);
     serial_puts(" type="); serial_hex(cmd_type);
+    serial_puts(" enq="); serial_hex(cmd_enq);
     serial_puts(" w0="); serial_hex(word0);
     serial_puts(" w1="); serial_hex(word1);
     serial_puts(" w2="); serial_hex(word2);
     serial_puts(" w3="); serial_hex(word3);
-    serial_puts(" cyc="); serial_hex(word3 & 1u);
+    serial_puts(" cyc="); serial_hex(cyc);
     serial_puts("]\n");
 
-    cmd_ring[0] = word0;
-    cmd_ring[1] = word1;
-    cmd_ring[2] = word2;
-    cmd_ring[3] = word3;
+    /* Write TRB at current enqueue position.
+     * Write fields 0-2 first, then barrier, then field 3 with cycle bit.
+     * This matches Linux queue_trb: wmb() before writing field[3]. */
+    int off = cmd_enq * 4;
+    cmd_ring[off + 0] = word0;
+    cmd_ring[off + 1] = word1;
+    cmd_ring[off + 2] = word2;
+    asm volatile("" ::: "memory"); /* wmb: ensure fields 0-2 visible before cycle bit */
+    cmd_ring[off + 3] = word3;
 
-    cmd_ring[4] = (uint32_t)cmd_phys;
-    cmd_ring[5] = (uint32_t)(cmd_phys >> 32);
-    cmd_ring[6] = 0;
-    cmd_ring[7] = (6u << 10) | (1u << 1) | (word3 & 1u);
+    /* Advance enqueue. If next TRB is the Link TRB (slot 255), toggle its
+     * cycle bit and wrap around. Per Linux inc_enq_past_link: XOR the Link
+     * TRB cycle bit, then toggle cycle_state. */
+    cmd_enq++;
+    if (cmd_enq >= 255) {
+        /* Toggle Link TRB cycle bit and producer cycle state,
+         * matching Linux inc_enq_past_link. */
+        cmd_ring[1023] ^= 1u;
+        cmd_cycle ^= 1u;
+        cmd_enq = 0;
+    }
 
     asm volatile("mfence" ::: "memory");
     uint32_t db_off = *(volatile uint32_t *)(cap + 0x14);
     volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
-    serial_puts("[DB c"); serial_hex(xhci_ctrl_id);
-    serial_puts(" db=0 val=0]\n");
-    db[0] = 0;
-    (void)db[0];
-    cmd_cycle ^= 1u;
+    db[0] = 0; /* Ring command doorbell */
+    (void)db[0]; /* Flush posted write, per Linux xhci_ring_cmd_db */
 
     int e = xhci_event_idx;
     int ok = 0;
@@ -133,6 +148,7 @@ uint8_t xhci_send_command(volatile uint8_t *cap, uint32_t word0, uint32_t word1,
     uint32_t ev0 = event_ring[e * 4 + 0];
     uint32_t ev1 = event_ring[e * 4 + 1];
     uint8_t cc = (uint8_t)(ev2 >> 24);
+    xhci_fb_last_cmd_cc = cc;
     uint64_t cmd_trb_ptr = ((uint64_t)ev1 << 32) | ev0;
     serial_puts("[CCE c"); serial_hex(xhci_ctrl_id);
     serial_puts(" cc="); serial_hex(cc);

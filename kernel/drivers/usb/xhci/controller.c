@@ -62,8 +62,16 @@ uint8_t xhci_get_report_cc = 0;
 uint8_t xhci_cfg_ep_cc = 0;
 int xhci_total_devices = 0;
 uint8_t xhci_fb_crcr_rcs = 0xFF;
-uint8_t xhci_fb_crcr_bit0 = 0xFF;
+uint8_t xhci_fb_crcr_crr = 0xFF;
 uint8_t xhci_fb_noop_cc = 0xFF;
+uint8_t xhci_fb_cmd_enq = 0xFF;
+uint8_t xhci_fb_cmd_cyc = 0xFF;
+uint8_t xhci_fb_last_cmd_type = 0xFF;
+uint8_t xhci_fb_last_cmd_cc = 0xFF;
+uint32_t xhci_fb_crcr_lo = 0xFFFFFFFF;
+uint32_t xhci_fb_crcr_hi = 0xFFFFFFFF;
+uint32_t xhci_fb_cmd_phys = 0xFFFFFFFF;
+uint8_t xhci_fb_hch_before = 0xFF;
 static void xhci_reset(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsparams1);
@@ -196,8 +204,8 @@ void xhci_init(void) {
             continue;
         }
 
-        /* Enable Memory Space (bit 1) + Bus Master (bit 2) + SERR (bit 8) */
-        uint32_t cmd_reg = pci_read_config16(d->bus, d->dev, d->func, 0x04);
+        /* Enable Memory Space (bit 1) + Bus Master (bit 2) */
+        uint32_t cmd_reg = pci_read_config32(d->bus, d->dev, d->func, 0x04);
         cmd_reg |= 0x0006; /* Memory Space + Bus Master */
         pci_write_config32(d->bus, d->dev, d->func, 0x04, cmd_reg);
 
@@ -339,10 +347,32 @@ void xhci_init(void) {
 
         fb_puts("CRCR rcs=", 0x00FFFFFF, 0x00000000);
         fb_print_hex8(xhci_fb_crcr_rcs);
-        fb_puts(" bit0=", 0x00FFFFFF, 0x00000000);
-        fb_print_hex8(xhci_fb_crcr_bit0);
+        fb_puts(" crr=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_fb_crcr_crr);
+        fb_puts(" hch=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_fb_hch_before);
         fb_puts(" NOOP cc=", 0x00FFFFFF, 0x00000000);
         fb_print_hex8(xhci_fb_noop_cc);
+        fb_puts(" enq=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_fb_cmd_enq);
+        fb_puts(" cyc=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_fb_cmd_cyc);
+        fb_puts("\n", 0x00FFFFFF, 0x00000000);
+
+        fb_puts("CRCRlo=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex(xhci_fb_crcr_lo);
+        fb_puts(" hi=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex(xhci_fb_crcr_hi);
+        fb_puts("\n", 0x00FFFFFF, 0x00000000);
+
+        fb_puts("cmdphys=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex(xhci_fb_cmd_phys);
+        fb_puts("\n", 0x00FFFFFF, 0x00000000);
+
+        fb_puts("LASTCMD type=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_fb_last_cmd_type);
+        fb_puts(" cc=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_fb_last_cmd_cc);
         fb_puts("\n", 0x00FFFFFF, 0x00000000);
 
         fb_puts("ENABLE cc=", 0x00FFFFFF, 0x00000000);
@@ -429,6 +459,14 @@ static void xhci_reset(volatile uint8_t *cap, uint8_t caplen) {
         if (!(op[1] & (1u << 11))) { ok = 1; break; }
     }
     if (!ok) { serial_puts("xhci: timeout CNR=0 after reset\n"); return; }
+
+    /* Per xHCI spec: after reset, HCH shall be set to 1. Some hardware
+     * may take extra time. Wait for it explicitly before returning. */
+    ok = 0;
+    for (int i = 0; i < 1000000; i++) {
+        if (op[1] & 1u) { ok = 1; break; }
+    }
+    if (!ok) { serial_puts("xhci: timeout HCH=1 after reset\n"); return; }
 
     serial_puts("xhci: reset ok\n");
 }
@@ -520,6 +558,16 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
     if (cmd_phys == 0) { serial_puts("xhci: no cmd page\n"); return; }
     cmd_ring = (volatile uint32_t *)(vmm_get_hhdm() + cmd_phys);
     memset((void *)cmd_ring, 0, 4096);
+    /* Setup Link TRB at slot 255 (TRB index 255 = dword offset 1020-1023).
+     * Per xHCI spec 4.11.5.1 and Linux xhci_initialize_ring_segments:
+     * - Link TRB type = 6, Toggle Cycle (TC) bit = 1
+     * - Cycle bit = 0 (CCS, opposite of PCS=1) so controller skips it initially
+     * - segment_ptr points back to start of ring (cmd_phys)
+     */
+    cmd_ring[1020] = (uint32_t)cmd_phys;
+    cmd_ring[1021] = (uint32_t)(cmd_phys >> 32);
+    cmd_ring[1022] = 0;
+    cmd_ring[1023] = (6u << 10) | (1u << 1) | 0u; /* Link TRB: type=6, TC=1, cycle=0 */
 
     event_phys = pmm_alloc_page();
     if (event_phys == 0) { serial_puts("xhci: no event page\n"); return; }
@@ -571,13 +619,48 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
     xhci_event_idx = 0;
     xhci_event_cycle = 1;
     cmd_cycle = 1;
+    cmd_enq = 0;
 
+    /* Config Register: set MaxSlotsEn (per Linux xhci_init order) */
+    op[14] = max_slots;
+    /* DCBAAP: write low dword first, then high (lo_hi_writeq per Linux) */
     op[12] = (uint32_t)dcbaap_phys;
     op[13] = (uint32_t)(dcbaap_phys >> 32);
-    op[6] = (uint32_t)(cmd_phys | (1u << 1)); /* RCS=1 (bit 1, NOT bit 0 which is reserved) */
-    op[7] = (uint32_t)(cmd_phys >> 32);
-    /* Config Register: set MaxSlotsEN to actual MaxSlots from HCSParams1 */
-    op[14] = max_slots;
+
+    /* CRCR: must be written when controller is halted (HCH=1 in USBSTS).
+     * Per xHCI spec 5.4.5: CRCR shall only be updated when HCH='1'.
+     * Per Linux xhci_set_cmd_ring_deq: write pointer + cycle_state.
+     * Don't preserve old status bits - after reset they should be 0,
+     * and preserving CA/CS could cause the controller to abort the ring. */
+    uint32_t usbsts = op[1];
+    xhci_fb_hch_before = (uint8_t)((usbsts >> 0) & 1u); /* HCH = bit 0 */
+    if (!(usbsts & 1u)) {
+        /* Wait for HCH=1 before writing CRCR */
+        int hch_ok = 0;
+        for (int i = 0; i < 1000000; i++) {
+            if (op[1] & 1u) { hch_ok = 1; break; }
+        }
+        if (!hch_ok) {
+            serial_puts("xhci: controller not halted, CRCR write may fail!\n");
+        }
+        xhci_fb_hch_before = (uint8_t)((op[1] >> 0) & 1u);
+    }
+    /* Write clean CRCR: pointer in bits 63:6, RCS=1 in bit 0, all other bits 0.
+     * Retry if RCS doesn't stick (some controllers need extra time after reset). */
+    uint32_t new_lo = ((uint32_t)(cmd_phys & ~0x3Fu)) | 1u;
+    uint32_t new_hi = (uint32_t)(cmd_phys >> 32);
+    for (int retry = 0; retry < 5; retry++) {
+        op[6] = new_lo;
+        op[7] = new_hi;
+        asm volatile("mfence" ::: "memory");
+        /* Read back and check RCS */
+        uint32_t check = op[6];
+        if (check & 1u) break;
+        serial_puts("xhci: CRCR RCS=0 retry "); serial_hex(retry); serial_puts("\n");
+        /* Small delay before retry */
+        for (volatile int d = 0; d < 10000; d++);
+    }
+    xhci_fb_cmd_phys = (uint32_t)cmd_phys;
 
     *iman = (1u << 1); /* IE */
 
@@ -597,14 +680,16 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
     serial_puts("[CRCR lo="); serial_hex(crcr_lo);
     serial_puts(" hi="); serial_hex(crcr_hi);
     serial_puts(" ptr="); serial_hex(((uint64_t)crcr_hi << 32) | (crcr_lo & ~0x3Fu));
-    serial_puts(" rcs="); serial_hex((crcr_lo >> 1) & 1u);
-    serial_puts(" bit0="); serial_hex(crcr_lo & 1u);
+    serial_puts(" rcs="); serial_hex(crcr_lo & 1u);
+    serial_puts(" crr="); serial_hex((crcr_lo >> 1) & 1u);
     serial_puts("]\n");
     serial_puts("[DCBAAP lo="); serial_hex(dcbaap_lo);
     serial_puts(" hi="); serial_hex(dcbaap_hi);
     serial_puts("]\n");
-    xhci_fb_crcr_rcs = (uint8_t)((crcr_lo >> 1) & 1u);
-    xhci_fb_crcr_bit0 = (uint8_t)(crcr_lo & 1u);
+    xhci_fb_crcr_rcs = (uint8_t)(crcr_lo & 1u);
+    xhci_fb_crcr_crr = (uint8_t)((crcr_lo >> 1) & 1u);
+    xhci_fb_crcr_lo = crcr_lo;
+    xhci_fb_crcr_hi = crcr_hi;
 
     asm volatile("mfence" ::: "memory");
     op[0] = 1 | (1u << 2); /* RS + INTE */
