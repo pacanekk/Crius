@@ -104,6 +104,7 @@ uint8_t xhci_send_command(volatile uint8_t *cap, uint32_t word0, uint32_t word1,
     cmd_ring[6] = 0;
     cmd_ring[7] = (6u << 10) | (1u << 1) | (word3 & 1u);
 
+    asm volatile("mfence" ::: "memory");
     uint32_t db_off = *(volatile uint32_t *)(cap + 0x14);
     volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
     serial_puts("[DB c"); serial_hex(xhci_ctrl_id);

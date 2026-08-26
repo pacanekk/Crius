@@ -27,6 +27,23 @@ int xhci_enable_slot(volatile uint8_t *cap) {
     cmd_ring[6] = 0;
     cmd_ring[7] = (6u << 10) | (1u << 1) | cyc;
 
+    /* Debug: print full TRB before doorbell */
+    serial_puts("[ENABLE_SLOT TRB\n");
+    serial_puts("  DW0="); serial_hex(cmd_ring[0]);
+    serial_puts("  DW1="); serial_hex(cmd_ring[1]);
+    serial_puts("  DW2="); serial_hex(cmd_ring[2]);
+    serial_puts("  DW3="); serial_hex(cmd_ring[3]);
+    serial_puts("  cyc="); serial_hex(cyc);
+    serial_puts(" type="); serial_hex((cmd_ring[3] >> 10) & 0x3F);
+    serial_puts("]\n");
+    serial_puts("[LINK TRB\n");
+    serial_puts("  DW0="); serial_hex(cmd_ring[4]);
+    serial_puts("  DW1="); serial_hex(cmd_ring[5]);
+    serial_puts("  DW2="); serial_hex(cmd_ring[6]);
+    serial_puts("  DW3="); serial_hex(cmd_ring[7]);
+    serial_puts("  tc="); serial_hex((cmd_ring[7] >> 1) & 1u);
+    serial_puts("]\n");
+    asm volatile("mfence" ::: "memory");
     uint32_t db_off = *(volatile uint32_t *)(cap + 0x14);
     volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
     serial_puts("[DB c"); serial_hex(xhci_ctrl_id);
@@ -185,6 +202,7 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     cmd_ring[6] = 0;
     cmd_ring[7] = (6u << 10) | (1u << 1) | new_cycle;
 
+    asm volatile("mfence" ::: "memory");
     uint32_t db_off = *(volatile uint32_t *)(cap + 0x14);
     volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
     serial_puts("[DB c"); serial_hex(xhci_ctrl_id);

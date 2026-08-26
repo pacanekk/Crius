@@ -83,6 +83,7 @@ uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bR
         serial_puts("]\n");
     }
 
+    asm volatile("mfence" ::: "memory");
     uint32_t db_off = *(volatile uint32_t *)(cap + 0x14);
     volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
     serial_puts("[DB c"); serial_hex(xhci_ctrl_id);
@@ -193,6 +194,7 @@ uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t b
         serial_puts("]\n");
     }
 
+    asm volatile("mfence" ::: "memory");
     uint32_t db_off = *(volatile uint32_t *)(cap + 0x14);
     volatile uint32_t *db = (volatile uint32_t *)(cap + (db_off & ~0x03u));
     serial_puts("[DB c"); serial_hex(xhci_ctrl_id);

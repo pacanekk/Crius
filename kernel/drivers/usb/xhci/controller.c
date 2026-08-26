@@ -37,6 +37,11 @@ uint8_t xhci_slot_id = 0;
 uint32_t xhci_pspd = 0;
 uint32_t xhci_root_port = 0;
 volatile uint8_t *xhci_cap;
+uint8_t xhci_fb_caplen = 0;
+uint16_t xhci_fb_version = 0;
+uint64_t xhci_fb_bar = 0;
+uint8_t xhci_fb_max_slots = 0;
+uint8_t xhci_fb_running = 0;
 uint8_t xhci_first_if_class = 0;
 uint8_t xhci_first_if_sub = 0;
 uint8_t xhci_first_if_proto = 0;
@@ -56,6 +61,9 @@ uint8_t xhci_set_idle_cc = 0;
 uint8_t xhci_get_report_cc = 0;
 uint8_t xhci_cfg_ep_cc = 0;
 int xhci_total_devices = 0;
+uint8_t xhci_fb_crcr_rcs = 0xFF;
+uint8_t xhci_fb_crcr_bit0 = 0xFF;
+uint8_t xhci_fb_noop_cc = 0xFF;
 static void xhci_reset(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsparams1);
@@ -205,8 +213,12 @@ void xhci_init(void) {
         serial_puts(" vbase="); serial_hex(vbase);
         serial_puts("]\n");
         volatile uint8_t *cap = (volatile uint8_t *)(vbase + (bar & 0xFFFUL));
-        uint8_t caplen   = *(volatile uint8_t *)cap;
-        uint16_t version = *(volatile uint16_t *)(cap + 0x02);
+        uint32_t caps0     = *(volatile uint32_t *)(cap + 0x00);
+        uint8_t caplen     = (uint8_t)(caps0 & 0xFF);
+        uint16_t version   = (uint16_t)((caps0 >> 16) & 0xFFFF);
+        xhci_fb_caplen = caplen;
+        xhci_fb_version = version;
+        xhci_fb_bar = bar;
         uint32_t hcsparams1 = *(volatile uint32_t *)(cap + 0x04);
         uint32_t hcsparams2 = *(volatile uint32_t *)(cap + 0x08);
         uint32_t hccparams1 = *(volatile uint32_t *)(cap + 0x10);
@@ -239,6 +251,14 @@ void xhci_init(void) {
             serial_puts("xhci: no INTx routing\n");
         } else {
             ioapic_set_redirect(d->interrupt_line, 0x22);
+        }
+
+        /* NO-OP test: verify command ring works before doing anything else */
+        {
+            uint8_t noop_cc = xhci_send_command(cap, 0, 0, 0, (23u << 10) | cmd_cycle);
+            xhci_fb_noop_cc = noop_cc;
+            serial_puts("xhci: NO-OP cc="); serial_hex(noop_cc); serial_puts("\n");
+            xhci_drain_events();
         }
 
         xhci_ports_init(cap, caplen, hcsparams1);
@@ -300,12 +320,29 @@ void xhci_init(void) {
 
     {
         fb_puts("\nUSB KBD DEBUG\n", 0x00FFFF00, 0x00000000);
+        fb_puts("caplen=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_fb_caplen);
+        fb_puts(" ver=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8((uint8_t)(xhci_fb_version >> 8));
+        fb_puts(" run=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_fb_running);
+        fb_puts(" slots=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_fb_max_slots);
+        fb_puts("\n", 0x00FFFFFF, 0x00000000);
         fb_puts("port=", 0x00FFFFFF, 0x00000000);
         fb_print_hex8(xhci_dev_port[0]);
         fb_puts(" speed=", 0x00FFFFFF, 0x00000000);
         fb_print_hex8(xhci_dev_spd[0]);
         fb_puts(" ctx=", 0x00FFFFFF, 0x00000000);
         fb_print_hex8(xhci_ctx_size ? 64 : 32);
+        fb_puts("\n", 0x00FFFFFF, 0x00000000);
+
+        fb_puts("CRCR rcs=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_fb_crcr_rcs);
+        fb_puts(" bit0=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_fb_crcr_bit0);
+        fb_puts(" NOOP cc=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_fb_noop_cc);
         fb_puts("\n", 0x00FFFFFF, 0x00000000);
 
         fb_puts("ENABLE cc=", 0x00FFFFFF, 0x00000000);
@@ -537,13 +574,18 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
 
     op[12] = (uint32_t)dcbaap_phys;
     op[13] = (uint32_t)(dcbaap_phys >> 32);
-    op[6] = (uint32_t)(cmd_phys | 2); /* RCS=1 (Ring Cycle State, bit 1) */
+    op[6] = (uint32_t)(cmd_phys | (1u << 1)); /* RCS=1 (bit 1, NOT bit 0 which is reserved) */
     op[7] = (uint32_t)(cmd_phys >> 32);
     /* Config Register: set MaxSlotsEN to actual MaxSlots from HCSParams1 */
     op[14] = max_slots;
 
     *iman = (1u << 1); /* IE */
 
+    /* Debug: read back CRCR and DCBAAP */
+    uint32_t crcr_lo = op[6];
+    uint32_t crcr_hi = op[7];
+    uint32_t dcbaap_lo = op[12];
+    uint32_t dcbaap_hi = op[13];
     serial_puts("[RING c"); serial_hex(xhci_ctrl_id);
     serial_puts(" erstsz="); serial_hex(*erstsz);
     serial_puts(" erstba="); serial_hex(*erstba);
@@ -552,7 +594,19 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
     serial_puts(" cmd_phys="); serial_hex(cmd_phys);
     serial_puts(" dcbaap="); serial_hex(dcbaap_phys);
     serial_puts("]\n");
+    serial_puts("[CRCR lo="); serial_hex(crcr_lo);
+    serial_puts(" hi="); serial_hex(crcr_hi);
+    serial_puts(" ptr="); serial_hex(((uint64_t)crcr_hi << 32) | (crcr_lo & ~0x3Fu));
+    serial_puts(" rcs="); serial_hex((crcr_lo >> 1) & 1u);
+    serial_puts(" bit0="); serial_hex(crcr_lo & 1u);
+    serial_puts("]\n");
+    serial_puts("[DCBAAP lo="); serial_hex(dcbaap_lo);
+    serial_puts(" hi="); serial_hex(dcbaap_hi);
+    serial_puts("]\n");
+    xhci_fb_crcr_rcs = (uint8_t)((crcr_lo >> 1) & 1u);
+    xhci_fb_crcr_bit0 = (uint8_t)(crcr_lo & 1u);
 
+    asm volatile("mfence" ::: "memory");
     op[0] = 1 | (1u << 2); /* RS + INTE */
     int ok = 0;
     for (int i = 0; i < 1000000; i++) {
@@ -560,5 +614,7 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
     }
     if (!ok) { serial_puts("xhci: timeout HCHalted=0\n"); return; }
     serial_puts("xhci: running\n");
+    xhci_fb_running = 1;
+    xhci_fb_max_slots = max_slots;
 }
 
