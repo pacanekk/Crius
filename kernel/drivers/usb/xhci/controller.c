@@ -49,6 +49,7 @@ uint8_t xhci_first_dev_cc = 0;
 uint8_t xhci_first_cfg_cc = 0;
 uint8_t xhci_addr_cc = 0;
 uint8_t xhci_slot_cc = 0;
+uint8_t xhci_slot_timeout = 0;
 uint8_t xhci_set_cfg_cc = 0;
 uint8_t xhci_dev_slot_cc[8];
 uint8_t xhci_dev_addr_cc[8];
@@ -379,6 +380,10 @@ void xhci_init(void) {
         fb_print_hex8(xhci_slot_cc);
         fb_puts(" slot=", 0x00FFFFFF, 0x00000000);
         fb_print_hex8(xhci_slot_id);
+        fb_puts(" to=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex8(xhci_slot_timeout);
+        fb_puts(" ev3=", 0x00FFFFFF, 0x00000000);
+        fb_print_hex(xhci_slot_ev3);
         fb_puts("\n", 0x00FFFFFF, 0x00000000);
 
         fb_puts("ADDRESS cc=", 0x00FFFFFF, 0x00000000);
@@ -659,6 +664,11 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
         for (volatile int d = 0; d < 10000; d++);
     }
     xhci_fb_cmd_phys = (uint32_t)cmd_phys;
+
+    /* Read back actual RCS and sync cmd_cycle to match controller state.
+     * If RCS=0, first TRB must have cycle=0. If RCS=1, cycle=1. */
+    uint32_t crcr_check = op[6];
+    cmd_cycle = (crcr_check & 1u) ? 1 : 0;
 
     *iman = (1u << 0) | (1u << 1); /* Clear IP (W1C) + set IE */
 

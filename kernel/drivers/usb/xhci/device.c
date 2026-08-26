@@ -24,14 +24,16 @@ int xhci_enable_slot(volatile uint8_t *cap) {
 
     /* Find slot ID from event: scan event ring for the CCE matching our TRB */
     uint8_t slot_id = 0;
+    xhci_slot_timeout = (cc == 0xFF) ? 1 : 0;
     if (cc == 0) {
         /* The slot ID is in the CCE event DW3 bits [31:24].
          * xhci_send_command already advanced past it, so we need to look at
          * the event just before current index. */
         int prev_e = xhci_event_idx - 1;
         if (prev_e < 0) prev_e = 255;
-        uint32_t ev3 = event_ring[prev_e * 4 + 3];
-        slot_id = (uint8_t)(ev3 >> 24);
+        xhci_slot_ev2 = event_ring[prev_e * 4 + 2];
+        xhci_slot_ev3 = event_ring[prev_e * 4 + 3];
+        slot_id = (uint8_t)(xhci_slot_ev3 >> 24);
     }
 
     xhci_slot_cc = cc;

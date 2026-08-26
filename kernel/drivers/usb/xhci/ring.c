@@ -138,7 +138,7 @@ uint8_t xhci_send_command(volatile uint8_t *cap, uint32_t word0, uint32_t word1,
         xhci_advance_event(e);
         e = xhci_event_idx;
     }
-    if (!ok) { serial_puts("xhci: command no cce\n"); return 0; }
+    if (!ok) { serial_puts("xhci: command no cce\n"); return 0xFF; }
     xhci_log_event(e, "match-cmd");
     xhci_advance_event(e);
 
