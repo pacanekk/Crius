@@ -73,7 +73,7 @@ uint32_t xhci_fb_crcr_lo = 0xFFFFFFFF;
 uint32_t xhci_fb_crcr_hi = 0xFFFFFFFF;
 uint32_t xhci_fb_cmd_phys = 0xFFFFFFFF;
 uint8_t xhci_fb_hch_before = 0xFF;
-static void xhci_reset(volatile uint8_t *cap, uint8_t caplen);
+static int xhci_reset(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen);
 static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsparams1);
 static void xhci_ownership_handoff(volatile uint8_t *cap, uint32_t hccparams1);
@@ -127,7 +127,7 @@ static void xhci_ownership_handoff(volatile uint8_t *cap, uint32_t hccparams1) {
 static uint32_t xhci_mfindex(volatile uint8_t *cap) {
     uint32_t rts_off = *(volatile uint32_t *)(cap + 0x18);
     volatile uint8_t *rt = cap + (rts_off & ~0x1Fu);
-    return *(volatile uint32_t *)(rt + 0x18) & 0x3FFFu;
+    return *(volatile uint32_t *)(rt + 0x00) & 0x3FFFu; /* MFINDEX at runtime offset 0 */
 }
 
 static void fb_print_hex(uint32_t v) {
@@ -247,7 +247,10 @@ void xhci_init(void) {
 
         xhci_cap = cap;
         xhci_ownership_handoff(cap, hccparams1);
-        xhci_reset(cap, caplen);
+        if (xhci_reset(cap, caplen) != 0) {
+            serial_puts("xhci: reset failed, skipping controller\n");
+            continue;
+        }
         xhci_setup_and_run(cap, caplen);
 
         if (c > 0 && prev_iman) *prev_iman = 0; /* disable previous controller IRQs */
@@ -430,7 +433,7 @@ void xhci_init(void) {
     if (xhci_cap) xhci_mdelay(xhci_cap, 3000);
 }
 
-static void xhci_reset(volatile uint8_t *cap, uint8_t caplen) {
+static int xhci_reset(volatile uint8_t *cap, uint8_t caplen) {
     volatile uint32_t *op = (volatile uint32_t *)(cap + caplen);
     int ok = 0;
 
@@ -438,7 +441,7 @@ static void xhci_reset(volatile uint8_t *cap, uint8_t caplen) {
     for (int i = 0; i < 1000000; i++) {
         if (!(op[1] & (1u << 11))) { ok = 1; break; }
     }
-    if (!ok) { serial_puts("xhci: timeout CNR=0\n"); return; }
+    if (!ok) { serial_puts("xhci: timeout CNR=0\n"); return -1; }
 
     /* stop if running */
     if (op[0] & 1u) {
@@ -447,7 +450,7 @@ static void xhci_reset(volatile uint8_t *cap, uint8_t caplen) {
         for (int i = 0; i < 1000000; i++) {
             if (op[1] & 1u) { ok = 1; break; }
         }
-        if (!ok) { serial_puts("xhci: timeout HCHalted\n"); return; }
+        if (!ok) { serial_puts("xhci: timeout HCHalted\n"); return -1; }
     }
 
     /* reset */
@@ -456,14 +459,14 @@ static void xhci_reset(volatile uint8_t *cap, uint8_t caplen) {
     for (int i = 0; i < 1000000; i++) {
         if (!(op[0] & (1u << 1))) { ok = 1; break; }
     }
-    if (!ok) { serial_puts("xhci: timeout HCRST\n"); return; }
+    if (!ok) { serial_puts("xhci: timeout HCRST\n"); return -1; }
 
     /* ready after reset */
     ok = 0;
     for (int i = 0; i < 1000000; i++) {
         if (!(op[1] & (1u << 11))) { ok = 1; break; }
     }
-    if (!ok) { serial_puts("xhci: timeout CNR=0 after reset\n"); return; }
+    if (!ok) { serial_puts("xhci: timeout CNR=0 after reset\n"); return -1; }
 
     /* Per xHCI spec: after reset, HCH shall be set to 1. Some hardware
      * may take extra time. Wait for it explicitly before returning. */
@@ -471,9 +474,10 @@ static void xhci_reset(volatile uint8_t *cap, uint8_t caplen) {
     for (int i = 0; i < 1000000; i++) {
         if (op[1] & 1u) { ok = 1; break; }
     }
-    if (!ok) { serial_puts("xhci: timeout HCH=1 after reset\n"); return; }
+    if (!ok) { serial_puts("xhci: timeout HCH=1 after reset\n"); return -1; }
 
     serial_puts("xhci: reset ok\n");
+    return 0;
 }
 
 static void xhci_ports_init(volatile uint8_t *cap, uint8_t caplen, uint32_t hcsparams1) {
@@ -632,43 +636,32 @@ static void xhci_setup_and_run(volatile uint8_t *cap, uint8_t caplen) {
     op[12] = (uint32_t)dcbaap_phys;
     op[13] = (uint32_t)(dcbaap_phys >> 32);
 
-    /* CRCR: must be written when controller is halted (HCH=1 in USBSTS).
-     * Per xHCI spec 5.4.5: CRCR shall only be updated when HCH='1'.
-     * Write pointer + cycle_state, no old status bits preserved. */
-    uint32_t usbsts = op[1];
-    xhci_fb_hch_before = (uint8_t)((usbsts >> 0) & 1u); /* HCH = bit 0 */
-    if (!(usbsts & 1u)) {
-        /* Wait for HCH=1 before writing CRCR */
+    /* CRCR may only be written while the command ring is not running
+     * (CRR=0, guaranteed when HCH=1). If the controller is somehow still
+     * running, stop it first: clear RS, wait for HCH. */
+    if (!(op[1] & 1u)) {
+        serial_puts("xhci: controller running before CRCR, stopping\n");
+        op[0] &= ~1u;
         int hch_ok = 0;
         for (int i = 0; i < 1000000; i++) {
             if (op[1] & 1u) { hch_ok = 1; break; }
         }
         if (!hch_ok) {
-            serial_puts("xhci: controller not halted, CRCR write may fail!\n");
+            serial_puts("xhci: cannot halt controller, abort\n");
+            return;
         }
-        xhci_fb_hch_before = (uint8_t)((op[1] >> 0) & 1u);
     }
-    /* Write clean CRCR: pointer in bits 63:6, RCS=1 in bit 0, all other bits 0.
-     * Retry if RCS doesn't stick (some controllers need extra time after reset). */
+    xhci_fb_hch_before = (uint8_t)(op[1] & 1u);
+
+    /* Write CRCR: dequeue pointer in bits 63:6, RCS=1 in bit 0.
+     * Producer cycle state starts at 1 for a fresh ring. */
     uint32_t new_lo = ((uint32_t)(cmd_phys & ~0x3Fu)) | 1u;
     uint32_t new_hi = (uint32_t)(cmd_phys >> 32);
-    for (int retry = 0; retry < 5; retry++) {
-        op[6] = new_lo;
-        op[7] = new_hi;
-        asm volatile("mfence" ::: "memory");
-        /* Read back and check RCS */
-        uint32_t check = op[6];
-        if (check & 1u) break;
-        serial_puts("xhci: CRCR RCS=0 retry "); serial_hex(retry); serial_puts("\n");
-        /* Small delay before retry */
-        for (volatile int d = 0; d < 10000; d++);
-    }
+    op[6] = new_lo;
+    op[7] = new_hi;
+    asm volatile("mfence" ::: "memory");
     xhci_fb_cmd_phys = (uint32_t)cmd_phys;
-
-    /* Read back actual RCS and sync cmd_cycle to match controller state.
-     * If RCS=0, first TRB must have cycle=0. If RCS=1, cycle=1. */
-    uint32_t crcr_check = op[6];
-    cmd_cycle = (crcr_check & 1u) ? 1 : 0;
+    cmd_cycle = 1;
 
     *iman = (1u << 0) | (1u << 1); /* Clear IP (W1C) + set IE */
 

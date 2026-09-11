@@ -22,26 +22,21 @@ int xhci_enable_slot(volatile uint8_t *cap) {
 
     uint8_t cc = xhci_send_command(cap, 0, 0, 0, (9u << 10) | cyc);
 
-    /* Find slot ID from event: scan event ring for the CCE matching our TRB */
+    /* Completion code 1 = Success. The allocated Slot ID is in the CCE
+     * DW3 bits [31:24], captured by xhci_send_command. */
     uint8_t slot_id = 0;
     xhci_slot_timeout = (cc == 0xFF) ? 1 : 0;
-    if (cc == 0) {
-        /* The slot ID is in the CCE event DW3 bits [31:24].
-         * xhci_send_command already advanced past it, so we need to look at
-         * the event just before current index. */
-        int prev_e = xhci_event_idx - 1;
-        if (prev_e < 0) prev_e = 255;
-        xhci_slot_ev2 = event_ring[prev_e * 4 + 2];
-        xhci_slot_ev3 = event_ring[prev_e * 4 + 3];
-        slot_id = (uint8_t)(xhci_slot_ev3 >> 24);
-    }
+    xhci_slot_ev2 = xhci_last_cce_dw2;
+    xhci_slot_ev3 = xhci_last_cce_dw3;
+    if (cc == 1)
+        slot_id = (uint8_t)(xhci_last_cce_dw3 >> 24);
 
     xhci_slot_cc = cc;
     serial_puts("[CCE c"); serial_hex(xhci_ctrl_id);
     serial_puts(" ENABLE cc="); serial_hex(cc);
     serial_puts(" slot="); serial_hex(slot_id);
     serial_puts("]\n");
-    return (cc == 0) ? slot_id : 0;
+    return (cc == 1) ? slot_id : 0;
 }
 
 int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
@@ -165,7 +160,7 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
     serial_puts(" slot="); serial_hex(slot);
     serial_puts("]\n");
     xhci_addr_cc = cc;
-    if (cc == 0) {
+    if (cc == 1) {
         xhci_dev_ctx = dev_ctx;
         serial_puts("[DEV CTX after addr]\n");
         for (int i = 0; i < 32; i++) {
@@ -173,7 +168,7 @@ int xhci_address_device(volatile uint8_t *cap, uint8_t caplen) {
             serial_hex(dev_ctx[i]); serial_puts("\n");
         }
     }
-    return (cc == 0) ? slot : 0;
+    return (cc == 1) ? slot : 0;
 }
 
 void xhci_get_device_descriptor(volatile uint8_t *cap, uint8_t caplen) {
@@ -182,7 +177,7 @@ void xhci_get_device_descriptor(volatile uint8_t *cap, uint8_t caplen) {
     if (data_phys == 0) { serial_puts("xhci: no data page\n"); return; }
     volatile uint32_t *data = (volatile uint32_t *)(vmm_get_hhdm() + data_phys);
     uint8_t cc = xhci_control_in(cap, 0x80, 0x06, 0x0100, 0, 64, data, data_phys);
-    if (xhci_first_dev_cc == 0) xhci_first_dev_cc = cc;
+    xhci_first_dev_cc = cc;
     serial_puts("xhci: get dev desc cc="); serial_hex(cc); serial_puts("\n");
 }
 
@@ -192,16 +187,16 @@ void xhci_get_config_descriptor(volatile uint8_t *cap, uint8_t caplen) {
     if (data_phys == 0) { serial_puts("xhci: no data page\n"); return; }
     volatile uint32_t *data = (volatile uint32_t *)(vmm_get_hhdm() + data_phys);
     uint8_t cc = xhci_control_in(cap, 0x80, 0x06, 0x0200, 0, 64, data, data_phys);
-    if (xhci_first_cfg_cc == 0) xhci_first_cfg_cc = cc;
+    xhci_first_cfg_cc = cc;
     serial_puts("xhci: get config desc cc="); serial_hex(cc); serial_puts("\n");
-    if (cc != 0 && cc != 13) { serial_puts("xhci: config desc failed\n"); return; }
+    if (cc != 1 && cc != 13) { serial_puts("xhci: config desc failed\n"); return; }
 
     volatile uint8_t *b = (volatile uint8_t *)data;
     uint16_t wTotalLength = (uint16_t)(b[2] | (b[3] << 8));
     if (wTotalLength > 64) {
         if (wTotalLength > 4096) wTotalLength = 4096;
         cc = xhci_control_in(cap, 0x80, 0x06, 0x0200, 0, wTotalLength, data, data_phys);
-        if (cc != 0 && cc != 13) { serial_puts("xhci: full config desc failed\n"); return; }
+        if (cc != 1 && cc != 13) { serial_puts("xhci: full config desc failed\n"); return; }
     }
     uint8_t bNumInterfaces = b[4];
     uint8_t bConfigurationValue = b[5];

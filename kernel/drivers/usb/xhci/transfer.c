@@ -14,8 +14,15 @@ int ep0_enq = 0;
 uint32_t xhci_last_xfer_len = 0;
 uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bRequest, uint16_t wValue, uint16_t wIndex, uint16_t wLength, volatile uint32_t *data, uint64_t data_phys) {
     (void)data;
-    if (!ep0_tr) { serial_puts("xhci: no ep0 tr\n"); return 0; }
+    if (!ep0_tr) { serial_puts("xhci: no ep0 tr\n"); return 0xFF; }
 
+    /* If the TD would cross the Link TRB (dword 1020), wrap first:
+     * toggle link cycle bit, toggle PCS, restart at 0. */
+    if (ep0_enq + 12 > 1020) {
+        ep0_tr[1023] ^= 1u;
+        ep0_cycle ^= 1u;
+        ep0_enq = 0;
+    }
     uint32_t cyc = ep0_cycle;
     int enq = ep0_enq;
     serial_puts("[CTRL IN c"); serial_hex(xhci_ctrl_id);
@@ -108,7 +115,7 @@ uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bR
         xhci_advance_event(e);
         e = xhci_event_idx;
     }
-    if (!ok) { serial_puts("xhci: control in no transfer event\n"); return 0; }
+    if (!ok) { serial_puts("xhci: control in no transfer event\n"); return 0xFF; }
     xhci_log_event(e, "match-xfer-in");
     xhci_advance_event(e);
 
@@ -126,25 +133,26 @@ uint8_t xhci_control_in(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bR
     serial_puts(" exp_status_trb="); serial_hex(ep0_tr_phys + (uint64_t)(enq + 8) * 4);
     serial_puts("]\n");
 
-    if (cc != 0 && cc != 13) {
+    if (cc != 1 && cc != 13) {
         serial_puts("xhci: control in FAIL cc=");
         serial_hex(cc); serial_puts("\n");
     }
 
-    if (cc == 0 || cc == 13) {
+    if (cc == 1 || cc == 13) {
         ep0_enq += 12;
-        if (ep0_enq >= 1020) {
-            ep0_tr[1023] ^= 1u; /* XOR Link TRB cycle bit */
-            ep0_cycle ^= 1u;    /* Toggle producer cycle state */
-            ep0_enq = 0;
-        }
     }
     return cc;
 }
 
 uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t bRequest, uint16_t wValue, uint16_t wIndex) {
-    if (!ep0_tr) { serial_puts("xhci: no ep0 tr\n"); return 0; }
+    if (!ep0_tr) { serial_puts("xhci: no ep0 tr\n"); return 0xFF; }
 
+    /* Wrap before the TD would cross the Link TRB (dword 1020). */
+    if (ep0_enq + 8 > 1020) {
+        ep0_tr[1023] ^= 1u;
+        ep0_cycle ^= 1u;
+        ep0_enq = 0;
+    }
     uint32_t cyc = ep0_cycle;
     int enq = ep0_enq;
     serial_puts("[CTRL OUT c"); serial_hex(xhci_ctrl_id);
@@ -221,7 +229,7 @@ uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t b
     }
     if (!ok) {
         serial_puts("xhci: control out no event\n");
-        return 0;
+        return 0xFF;
     }
     xhci_log_event(e, "match-xfer-out");
     xhci_advance_event(e);
@@ -238,13 +246,8 @@ uint8_t xhci_control_out(volatile uint8_t *cap, uint8_t bmRequestType, uint8_t b
     serial_puts(" len="); serial_hex(xfer_len);
     serial_puts(" exp_status_trb="); serial_hex(ep0_tr_phys + (uint64_t)(enq + 4) * 4);
     serial_puts("]\n");
-    if (cc == 0 || cc == 13) {
+    if (cc == 1 || cc == 13) {
         ep0_enq += 8;
-        if (ep0_enq >= 1020) {
-            ep0_tr[1023] ^= 1u; /* XOR Link TRB cycle bit */
-            ep0_cycle ^= 1u;    /* Toggle producer cycle state */
-            ep0_enq = 0;
-        }
     }
     return cc;
 }
@@ -256,8 +259,10 @@ uint8_t xhci_prep_ep0(volatile uint8_t *cap) {
     scc = xhci_send_command(cap, 0, 0, 0,
         (15u << 10) | (1u << 16) | ((uint32_t)xhci_slot_id << 24) | cmd_cycle);
 
-    /* DCS bit goes in DW2 bit 0, not in the dequeue pointer */
-    scc = xhci_send_command(cap, (uint32_t)deq, (uint32_t)(deq >> 32), ep0_cycle & 1u,
+    /* Set TR Dequeue Pointer: DCS is bit 0 of the dequeue pointer (DW0),
+     * Stream ID (DW2) stays 0 for non-stream endpoints. */
+    uint64_t deq_dcs = deq | (uint64_t)(ep0_cycle & 1u);
+    scc = xhci_send_command(cap, (uint32_t)deq_dcs, (uint32_t)(deq_dcs >> 32), 0,
         (16u << 10) | (1u << 16) | ((uint32_t)xhci_slot_id << 24) | cmd_cycle);
     return scc;
 }

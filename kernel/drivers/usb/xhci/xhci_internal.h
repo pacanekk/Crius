@@ -51,6 +51,8 @@ extern uint8_t xhci_slot_cc;
 extern uint8_t xhci_slot_timeout;
 extern uint32_t xhci_slot_ev2;
 extern uint32_t xhci_slot_ev3;
+extern uint32_t xhci_last_cce_dw2;
+extern uint32_t xhci_last_cce_dw3;
 extern uint8_t xhci_set_cfg_cc;
 
 extern uint8_t xhci_dev_slot_cc[8];
